@@ -1,0 +1,76 @@
+#version 450
+
+const float PI = 3.1415926535897932384626433832795;
+const float INV_PI = 1.0 / PI;
+const float TWO_PI = PI * 2.0;
+const float HALF_PI = PI * 0.5;
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// The HDR environment map (input)
+layout(set = 0, binding = 1) uniform samplerCube environmentMap;
+
+// The output irradiance map
+layout(set = 0, binding = 2, rgba32f) writeonly uniform imageCube irradianceMap;
+
+const float sampleDelta = 0.025;
+const float totalSamples = (TWO_PI / sampleDelta) * (HALF_PI / sampleDelta); 
+const float invTotalSamples = 1.0 / totalSamples;
+
+vec3 calculateWorldPos(ivec3 cubeCoord);
+
+void main()
+{   
+    ivec3 cubeCoord = ivec3(gl_GlobalInvocationID);
+    vec3 worldPos = calculateWorldPos(cubeCoord);
+    vec3 normal = normalize(worldPos);
+
+    // Tangent space basis vectors
+    vec3 up = vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(up, normal));
+    up = cross(normal, right);
+
+    vec3 irradiance = vec3(0.0);
+    for(float phi = 0.0; phi < TWO_PI; phi += sampleDelta)
+    {
+        float sinPhi = sin(phi);
+        float cosPhi = cos(phi);
+        
+        for(float theta = 0.0; theta < HALF_PI; theta += sampleDelta)
+        {
+            float sinTheta = sin(theta);
+            float cosTheta = cos(theta);
+
+            // Spherical to Cartesian, in tangent space
+            vec3 sphereCoord = vec3(sinTheta * cosPhi, sinTheta * sinPhi, cosTheta);
+            vec3 sampleVec = sphereCoord.x * right + sphereCoord.y * up + sphereCoord.z * normal; 
+
+            // Sample the environment map
+            vec3 sampleColor = texture(environmentMap, sampleVec).rgb;
+
+            irradiance += sampleColor * cosTheta * sinTheta;
+        }
+    }
+    irradiance *= PI * invTotalSamples;
+
+    imageStore(irradianceMap, cubeCoord, vec4(irradiance, 1.0));
+}
+
+vec3 calculateWorldPos(ivec3 cubeCoord)
+{
+    // Convert cube map coordinates to world space direction
+    vec3 worldPos;
+    vec2 texCoord = (vec2(cubeCoord.xy) / vec2(imageSize(irradianceMap))) * 2.0 - 1.0;
+    
+    switch (cubeCoord.z)
+    {
+        case 0: worldPos = vec3(1.0, -texCoord.y, -texCoord.x); break; // posx
+        case 1: worldPos = vec3(-1.0, -texCoord.y, texCoord.x); break; // negx
+        case 2: worldPos = vec3(texCoord.x, 1.0, texCoord.y); break;   // posy
+        case 3: worldPos = vec3(texCoord.x, -1.0, -texCoord.y); break; // negy
+        case 4: worldPos = vec3(texCoord.x, -texCoord.y, 1.0); break;  // posz
+        case 5: worldPos = vec3(-texCoord.x, -texCoord.y, -1.0); break; // negz
+    }
+
+    return worldPos;
+}
