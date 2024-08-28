@@ -1,5 +1,4 @@
-# HDX
-# Vulkan Realtime Rendering Engine
+# HDX-  Vulkan Realtime Rendering Engine
 
 ## Overview
 
@@ -35,7 +34,6 @@ This project is a Vulkan-based 3D rendering engine developed in C++. The engine 
 - **Vulkan SDK**: Ensure you have the Vulkan SDK installed on your system.
 - **C++ Compiler**: A modern C++ compiler that supports C++17 or later.
 - **CMake**: Used for building the project.
-- **GLM**: The engine uses the GLM library for mathematics operations.
 
 ### Building the Project
 1. **Clone the repository**:
