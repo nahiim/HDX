@@ -242,6 +242,7 @@ Application::Application()
 
 	device.updateDescriptorSets(4, _WDS.data(), 0, nullptr);
 
+	pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
 	pipeline = hdx::createGraphicsPipeline(device, pipeline_layout, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
 
 	image_available_semaphore = hdx::createSemaphore(device);

@@ -5,7 +5,7 @@ setlocal
 :: Define the shader directory
 set SHADER_DIR=shaders
 
-set OUTPUT_DIR=bin/output/x64/Debug/res/shaders
+set OUTPUT_DIR=Debug/res/shaders
 
 :: Compile vertex shaders
 for %%f in (%SHADER_DIR%\*.vert) do (
@@ -28,6 +28,7 @@ endlocal
 for %%f in (shaders\*.spv) do (
     move "%%f" "%OUTPUT_DIR%"
 )
-move *.spv bin/output/x64/Debug/res/shaders
+copy *.spv build\Debug\res\shaders
+move *.spv build/res/shaders
 
 pause

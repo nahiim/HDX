@@ -95,6 +95,9 @@ Application::Application()
 	_DSLB.push_back(hdx::createDescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute));
 	_DSL = hdx::createDescriptorSetLayout(device, _DSLB);
 
+	g_pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
+	c_pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
+
 	graphics_pipeline = hdx::createGraphicsPipeline(device, g_pipeline_layout, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL, vk::PrimitiveTopology::ePointList, extent);
 	compute_pipeline = hdx::createComputePipeline(device, _DSL, c_pipeline_layout, "res/shaders/shader.comp.spv");
 

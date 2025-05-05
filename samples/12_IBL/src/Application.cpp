@@ -174,7 +174,7 @@ Application::Application()
 	vk::DescriptorBufferInfo pf_info = hdx::createDescriptorBufferInfo(pf_uniform, sizeof(PrefilterUBO));
 
 	pool_sizes = {
-		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 5),
+		vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 4),
 		vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 5),
 		vk::DescriptorPoolSize(vk::DescriptorType::eStorageImage, 4)
 	};
@@ -202,14 +202,18 @@ Application::Application()
 	};
 	device.updateDescriptorSets(7, _WDS.data(), 0, nullptr);
 
+	ir_PL = hdx::createPipelineLayout(device, _DSL, 0);
+	brdf_PL = hdx::createPipelineLayout(device, _DSL, 0);
+	pf_PL = hdx::createPipelineLayout(device, _DSL, 0);
+
 	ir_pipeline = hdx::createComputePipeline(device, _DSL, ir_PL, "res/shaders/irradiance.comp.spv");
 	pf_pipeline = hdx::createComputePipeline(device, _DSL, pf_PL, "res/shaders/prefilter.comp.spv");
 	brdf_pipeline = hdx::createComputePipeline(device, _DSL, brdf_PL, "res/shaders/brdf_lut.comp.spv");
 
 
-	hdx::transitionImageLayout(device, ir_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
-	hdx::transitionImageLayout(device, pf_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
-	hdx::transitionImageLayout(device, brdf_lut, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR16G16B16A16Sfloat, s_command_buffer, mip_levels, 1);
+		hdx::transitionImageLayout(device, ir_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, pf_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, brdf_lut, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR16G16B16A16Sfloat, s_command_buffer, mip_levels, 1);
 	hdx::endSingleTimeCommands(device, s_command_buffer, command_pool, queue);
 
 	// Irradiance map generation
@@ -225,11 +229,11 @@ Application::Application()
 	for (unsigned int mip = 0; mip < mip_levels; ++mip)
 	{
 		pf_ubo.roughness = 0; // Roughness increases with mip level
-		pf_ubo.resolution.x = pf_ubo.resolution.y = 768 >> mip; // Halve the resolution for each mip level
+		pf_ubo.resolution.x = pf_ubo.resolution.y = resolution >> mip; // Halve the resolution for each mip level
 		hdx::copyToDevice(device, pf_uniform, &pf_ubo, sizeof(PrefilterUBO));
 
-		vk::ImageView iv = hdx::createImageView(device, pf_texture.image, vk::Format::eR32G32B32A32Sfloat, vk::ImageAspectFlagBits::eColor, 6, 6, view_type_cube, mip);
-		prefilter_map_info.imageView = iv;
+		prefilter_image_view[mip] = hdx::createImageView(device, pf_texture.image, vk::Format::eR32G32B32A32Sfloat, vk::ImageAspectFlagBits::eColor, 6, 6, view_type_cube, mip);
+		prefilter_map_info.imageView = prefilter_image_view[mip];
 		_WDS[3] = hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageImage, prefilter_map_info, 3);
 		device.updateDescriptorSets(7, _WDS.data(), 0, nullptr);
 
@@ -274,6 +278,8 @@ Application::Application()
 	};
 	device.updateDescriptorSets(6, _WDS.data(), 0, nullptr);
 
+	pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
+	sphere_pl = hdx::createPipelineLayout(device, _DSL0, 0);
 	pipeline = hdx::createGraphicsPipeline(device, pipeline_layout, renderpass, msaa_samples, "res/shaders/skybox.vert.spv", "res/shaders/skybox.frag.spv", cube_binding_descriptions, cube_attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
 	sphere_pipeline = hdx::createGraphicsPipeline(device, sphere_pl, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL0, vk::PrimitiveTopology::eTriangleList, extent);
 
@@ -425,6 +431,8 @@ Application::~Application()
 	hdx::cleanupImage(device, pf_texture);
 	hdx::cleanupImage(device, ir_texture);
 	hdx::cleanupImage(device, brdf_lut);
+	for (int i = 0; i < 6; i++)
+		device.destroy(prefilter_image_view[i]);
 	device.destroySampler(cube_sampler);
 
 	device.destroyPipeline(pipeline);

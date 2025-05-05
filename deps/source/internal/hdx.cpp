@@ -182,6 +182,57 @@ namespace hdx
 		}
 	}
 
+
+	void createInstance(vk::Instance& instance, const char* app_name, bool enable_validation_layers, const std::vector<const char*> validation_layers)
+	{
+		// Application info
+		vk::ApplicationInfo app_info{};
+		app_info.sType = vk::StructureType::eApplicationInfo;
+		app_info.pApplicationName = app_name;
+		app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		app_info.pEngineName = "HDX Engine";
+		app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		app_info.apiVersion = VK_MAKE_API_VERSION(0, 1, 0, 0);
+
+
+		// Instance Create Info
+		vk::InstanceCreateInfo create_info{};
+		create_info.sType = vk::StructureType::eInstanceCreateInfo;
+		create_info.pApplicationInfo = &app_info;
+		create_info.enabledLayerCount = 0;
+
+
+		if (enable_validation_layers && !checkValidationLayerSupport(validation_layers))
+		{
+			throw std::runtime_error("validation layers requested, but not available!");
+		}
+		if (enable_validation_layers)
+		{
+			std::cout << "\n" << validation_layers.data() << "\n";
+			create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
+			create_info.ppEnabledLayerNames = validation_layers.data();
+		}
+		else
+		{
+			create_info.enabledLayerCount = 0;
+		}
+		// Now we can make the Vulkan instance
+		try
+		{
+			std::cout << "\ncreating Instance...\n";
+			instance = vk::createInstance(create_info, nullptr);
+		}
+		catch (std::exception err)
+		{
+			std::cout << "Failed to create Instance: " << err.what() << std::endl;
+		}
+	}
+
+
+
+
+
+
 // MEMORY FUNCTIONS
     uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties& mem_properties, uint32_t type_filter, vk::MemoryPropertyFlags properties)
     {
@@ -197,11 +248,25 @@ namespace hdx
     }
     void copyToDevice(vk::Device device, BufferDesc dst_buffer, void* source, uint64_t size)
     {
-        void* data;
-        device.mapMemory(dst_buffer.memory, 0, size, {}, &data);
-        memcpy(data, source, (size_t)size);
+        void* destination;
+        vk::Result result = device.mapMemory(dst_buffer.memory, 0, size, {}, &destination);
+		if (result != vk::Result::eSuccess) {
+			throw std::runtime_error("Failed to map memory.");
+		}
+        memcpy(destination, source, (size_t)size);
         device.unmapMemory(dst_buffer.memory);
     }
+
+	void copyFromDevice(vk::Device device, BufferDesc src_buffer, void* destination, uint64_t size)
+	{
+		void* source;
+		vk::Result result = device.mapMemory(src_buffer.memory, 0, size, {}, &source);
+		if (result != vk::Result::eSuccess) {
+			throw std::runtime_error("Failed to map memory.");
+		}
+		memcpy(destination, source, (size_t)size);
+		device.unmapMemory(src_buffer.memory);
+	}
 
 
 
@@ -336,20 +401,6 @@ namespace hdx
 		dynamic_state.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
 		dynamic_state.pDynamicStates = dynamic_states.data();
 
-		// Pipeline layout create info
-		vk::PipelineLayoutCreateInfo pipeline_layout_info{};
-		pipeline_layout_info.sType = vk::StructureType::ePipelineLayoutCreateInfo;
-		pipeline_layout_info.setLayoutCount = 1;
-		pipeline_layout_info.pSetLayouts = &dset_layout;
-
-		// Create pipeline layout
-		try {
-			pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
-		}
-		catch (vk::SystemError err) {
-			throw std::runtime_error("failed to create pipeline layout!");
-		}
-
 		// Depth stencil state create info
 		vk::PipelineDepthStencilStateCreateInfo depth_stencil_info{};
 		depth_stencil_info.sType = vk::StructureType::ePipelineDepthStencilStateCreateInfo;
@@ -406,22 +457,6 @@ namespace hdx
 		computeShaderStageInfo.module = compute_shader_module;
 		computeShaderStageInfo.pName = "main";
 
-		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-		pipelineLayoutInfo.sType = vk::StructureType::ePipelineLayoutCreateInfo;
-		pipelineLayoutInfo.setLayoutCount = 1;
-		pipelineLayoutInfo.pSetLayouts = &dset_layout;
-
-		// Create Pipeline Layout
-		try
-		{
-			pipeline_layout = device.createPipelineLayout(pipelineLayoutInfo);
-		}
-		catch (vk::SystemError err)
-		{
-			throw std::runtime_error("failed to create pipeline layout!");
-		}
-
-
 		vk::ComputePipelineCreateInfo pipeline_info{};
 		pipeline_info.sType = vk::StructureType::eComputePipelineCreateInfo;
 		pipeline_info.layout = pipeline_layout;
@@ -442,6 +477,100 @@ namespace hdx
 		return pipeline;
 	}
 
+	void createComputePipeline(const vk::Device& device, vk::Pipeline& pipeline, vk::PipelineLayout& pipeline_layout, vk::DescriptorSetLayout dset_layout, const std::string& path)
+	{
+		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+
+
+		pipelineLayoutInfo.sType = vk::StructureType::ePipelineLayoutCreateInfo;
+		pipelineLayoutInfo.setLayoutCount = 1;
+		pipelineLayoutInfo.pSetLayouts = &dset_layout;
+
+		// Create Pipeline Layout
+		try
+		{
+			pipeline_layout = device.createPipelineLayout(pipelineLayoutInfo);
+		}
+		catch (vk::SystemError err)
+		{
+			throw std::runtime_error("failed to create pipeline layout!");
+		}
+
+		auto compute_shader_code = read_file(path);
+
+		vk::ShaderModule compute_shader_module = createShaderModule(device, compute_shader_code);
+
+		vk::PipelineShaderStageCreateInfo computeShaderStageInfo{};
+		computeShaderStageInfo.sType = vk::StructureType::ePipelineShaderStageCreateInfo;
+		computeShaderStageInfo.stage = vk::ShaderStageFlagBits::eCompute;
+		computeShaderStageInfo.module = compute_shader_module;
+		computeShaderStageInfo.pName = "main";
+
+		vk::ComputePipelineCreateInfo pipeline_info{};
+		pipeline_info.sType = vk::StructureType::eComputePipelineCreateInfo;
+		pipeline_info.layout = pipeline_layout;
+		pipeline_info.stage = computeShaderStageInfo;
+
+		// Create The compute Pipeline
+		try
+		{
+			pipeline = device.createComputePipeline(nullptr, pipeline_info).value;
+		}
+		catch (vk::SystemError err)
+		{
+			throw std::runtime_error("failed to create graphics pipeline!");
+		}
+
+		device.destroyShaderModule(compute_shader_module, nullptr);
+	}
+
+
+	vk::PipelineLayout createPipelineLayout(vk::Device device, vk::DescriptorSetLayout dsl, uint32_t push_constant_size)
+	{
+		vk::PipelineLayout pipeline_layout;
+		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+
+		if (push_constant_size > 0)
+		{		// Define the push constant range
+			vk::PushConstantRange pcr = {};
+			pcr.stageFlags = vk::ShaderStageFlagBits::eCompute; // Use in compute shader
+			pcr.offset = 0;										// Start at offset 0
+			pcr.size = push_constant_size;						// Size of your push constant block
+
+			vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+			pipelineLayoutInfo.sType = vk::StructureType::ePipelineLayoutCreateInfo;
+			pipelineLayoutInfo.setLayoutCount = 1;
+			pipelineLayoutInfo.pSetLayouts = &dsl;
+			pipelineLayoutInfo.pPushConstantRanges = &pcr;
+			pipelineLayoutInfo.pushConstantRangeCount = 1;		// Number of push constant ranges
+		}
+		else
+		{
+			pipelineLayoutInfo.sType = vk::StructureType::ePipelineLayoutCreateInfo;
+			pipelineLayoutInfo.setLayoutCount = 1;
+			pipelineLayoutInfo.pSetLayouts = &dsl;
+		}
+
+		// Create Pipeline Layout
+		try
+		{
+			pipeline_layout = device.createPipelineLayout(pipelineLayoutInfo);
+		}
+		catch (vk::SystemError err)
+		{
+			throw std::runtime_error("failed to create pipeline layout!");
+		}
+
+		return pipeline_layout;
+	}
+
+
+	void cleanupPipeline(vk::Device& device, vk::Pipeline& pipeline, vk::PipelineLayout& pipeline_layout)
+	{
+		device.destroyPipeline(pipeline);
+		device.destroyPipelineLayout(pipeline_layout);
+	}
+
 
 
 
@@ -451,7 +580,7 @@ namespace hdx
 		vk::RenderPass render_pass;
 
 		vk::AttachmentDescription color_attachment{};
-		color_attachment.format = vk::Format::eR8G8B8A8Srgb;
+		color_attachment.format = format;
 		color_attachment.samples = msaa_samples;
 		color_attachment.loadOp = vk::AttachmentLoadOp::eClear;
 		color_attachment.storeOp = vk::AttachmentStoreOp::eStore;
@@ -898,6 +1027,19 @@ namespace hdx
 		cmd_buffer.begin(beginInfo);
 		cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
 		cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline_layout, 0, 1, &dsc_set, 0, nullptr);
+		cmd_buffer.dispatch(x, y, z);
+		cmd_buffer.end();
+	}
+	template <typename PC>
+	void recordComputeCommandBuffer(vk::Device device, vk::CommandBuffer cmd_buffer, vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, vk::DescriptorSet dsc_set, const PC& pc, uint32_t pc_size, uint32_t x, uint32_t y, uint32_t z)
+	{
+		vk::CommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = vk::StructureType::eCommandBufferBeginInfo;
+
+		cmd_buffer.begin(beginInfo);
+		cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline);
+		cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, pipeline_layout, 0, 1, &dsc_set, 0, nullptr);
+		cmd_buffer.pushConstants(pipelineLayout, vk::ShaderStageFlagBits::eCompute, 0, pc_size, &pc);
 		cmd_buffer.dispatch(x, y, z);
 		cmd_buffer.end();
 	}
@@ -1694,6 +1836,54 @@ namespace hdx
 		}
 	}
 
+	vk::Device createLogicalDevice(DeviceDesc device_desc, const std::vector<const char*> validation_layers, bool enable_validation_layers)
+	{
+		vk::Device logical_device;
+
+		std::vector<vk::DeviceQueueCreateInfo> queue_create_infos;
+
+		float queue_priority = 1.0f;
+		for (uint8_t i = 0; i < device_desc.queue_families.size(); i++)
+		{
+			vk::DeviceQueueCreateInfo queue_create_info{};
+			queue_create_info.sType = vk::StructureType::eDeviceQueueCreateInfo;
+			queue_create_info.queueFamilyIndex = i;
+			queue_create_info.queueCount = 1;
+			queue_create_info.pQueuePriorities = &queue_priority;
+			queue_create_infos.push_back(queue_create_info);
+		}
+
+		vk::PhysicalDeviceFeatures device_features{};
+
+		vk::DeviceCreateInfo create_info{};
+		create_info.sType = vk::StructureType::eDeviceCreateInfo;
+		create_info.pQueueCreateInfos = queue_create_infos.data();
+		create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
+		create_info.pEnabledFeatures = &device_features;
+
+		if (enable_validation_layers)
+		{
+			create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
+			create_info.ppEnabledLayerNames = validation_layers.data();
+		}
+		else
+		{
+			create_info.enabledLayerCount = 0;
+		}
+
+
+
+		try
+		{
+			logical_device = device_desc.physical_device.createDevice(create_info);
+		}
+		catch (vk::SystemError err)
+		{
+			throw std::runtime_error("failed to create Logical Device");
+		}
+
+		return logical_device;
+	}
 
 	vk::Device createLogicalDevice(DeviceDesc device_desc, const std::vector<const char*> device_extensions, const std::vector<const char*> validation_layers, bool enable_validation_layers)
 	{
@@ -2019,20 +2209,23 @@ namespace hdx
 		const float PI = 3.14159265359f;
 		const float TWO_PI = 2.0f * PI;
 
-		for (int face = 0; face < 6; ++face) {
-			for (int y = 0; y < faceSize; ++y) {
-				for (int x = 0; x < faceSize; ++x) {
+		for (int face = 0; face < 6; ++face)
+		{
+			for (int y = 0; y < faceSize; ++y)
+			{
+				for (int x = 0; x < faceSize; ++x)
+				{
 					float u = (x + 0.5f) / faceSize * 2.0f - 1.0f; // Convert to [-1, 1]
 					float v = (y + 0.5f) / faceSize * 2.0f - 1.0f; // Convert to [-1, 1]
 
 					// Compute direction vector
 					glm::vec3 dir;
-					if (face == 0) dir = glm::normalize(glm::vec3(1, v, -u));   // Positive X
-					if (face == 1) dir = glm::normalize(glm::vec3(-1, v, u));   // Negative X
-					if (face == 2) dir = glm::normalize(glm::vec3(u, -1, v));   // Positive Y (Top)
-					if (face == 3) dir = glm::normalize(glm::vec3(u, 1, -v));   // Negative Y (Bottom)
-					if (face == 4) dir = glm::normalize(glm::vec3(u, v, 1));    // Positive Z
-					if (face == 5) dir = glm::normalize(glm::vec3(-u, v, -1));  // Negative Z
+					if (face == 0) dir = glm::normalize(glm::vec3( 1,  v, -u));   // Positive X
+					if (face == 1) dir = glm::normalize(glm::vec3(-1,  v,  u));   // Negative X
+					if (face == 2) dir = glm::normalize(glm::vec3( u, -1,  v));   // Positive Y (Top)
+					if (face == 3) dir = glm::normalize(glm::vec3( u,  1, -v));   // Negative Y (Bottom)
+					if (face == 4) dir = glm::normalize(glm::vec3( u,  v,  1));    // Positive Z
+					if (face == 5) dir = glm::normalize(glm::vec3(-u,  v, -1));  // Negative Z
 
 					// Convert direction vector to spherical coordinates
 					float theta = atan2(dir.z, dir.x);
@@ -2060,6 +2253,25 @@ namespace hdx
 				}
 			}
 		}
+	}
+
+
+
+	uint8_t* rgbaToGrayscale(const uint8_t* rgba, int width, int height)
+	{
+		uint8_t* grayscale;
+
+		for (int i = 0; i < width * height; i++)
+		{
+			uint8_t r = rgba[i * 4 + 0];
+			uint8_t g = rgba[i * 4 + 1];
+			uint8_t b = rgba[i * 4 + 2];
+			uint8_t a = rgba[i * 4 + 3];
+
+			grayscale[i] = static_cast<uint8_t>(r);
+		}
+
+		return grayscale;
 	}
 
 }

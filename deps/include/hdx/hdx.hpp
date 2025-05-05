@@ -20,6 +20,8 @@
 #include<vulkan/vulkan.hpp>
 
 #include "stb_image.h"
+#include "stb_image_write.h"
+
 #include "window.h"
 
 namespace hdx
@@ -67,7 +69,8 @@ namespace hdx
 	std::vector<char> read_file(const std::string& filename);
 
 	bool checkValidationLayerSupport(const std::vector<const char*> validation_layers);
-	void createInstance(vk::Instance &instance, Window *window, const char* app_name, bool enable_validation_layers, const std::vector<const char*> validation_layers);
+	void createInstance(vk::Instance& instance, Window* window, const char* app_name, bool enable_validation_layers, const std::vector<const char*> validation_layers);
+	void createInstance(vk::Instance& instance, const char* app_name, bool enable_validation_layers, const std::vector<const char*> validation_layers);
 
 	VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
 	void createDebugMessenger(vk::DebugUtilsMessengerEXT& debug_messenger, vk::Instance instance, vk::DispatchLoaderDynamic dldi);
@@ -76,12 +79,19 @@ namespace hdx
 
 // MEMORY FUNCTIONS
     uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties& mem_properties, uint32_t type_filter, vk::MemoryPropertyFlags properties);
-    void copyToDevice(vk::Device device, BufferDesc buffer, void* source, uint64_t size);
+    void copyToDevice(vk::Device device, BufferDesc dst_buffer, void* source, uint64_t size);
+	void copyFromDevice(vk::Device device, BufferDesc src_buffer, void* destination, uint64_t size);
+    // void memcpyHostToDevice(vk::Device device, BufferDesc dst_buffer, void* src, uint64_t size);
+	// void memcpyDeviceToHost(vk::Device device, BufferDesc src_buffer, void* dst, uint64_t size);
 
 // PIPELINE FUNCTIONS
 	vk::ShaderModule createShaderModule(const vk::Device& device, const std::vector<char>& code);
 	vk::Pipeline createGraphicsPipeline(const vk::Device& device, vk::PipelineLayout& pipeline_layout, const vk::RenderPass& rp, vk::SampleCountFlagBits msaa_samples, const std::string& vertex_shader, const std::string& fragment_shader, const std::vector<vk::VertexInputBindingDescription>& binding_descriptions, const std::vector<vk::VertexInputAttributeDescription>& attribute_descriptions, vk::DescriptorSetLayout dset_layout, vk::PrimitiveTopology topology, vk::Extent2D extent);
 	vk::Pipeline createComputePipeline(const vk::Device& device, vk::DescriptorSetLayout dset_layout, vk::PipelineLayout& pipeline_layout, const std::string& path);
+	void createComputePipeline(const vk::Device& device, vk::Pipeline& pipeline, vk::PipelineLayout& pipeline_layout, vk::DescriptorSetLayout dset_layout, const std::string& path);
+	vk::PipelineLayout createPipelineLayout(vk::Device, vk::DescriptorSetLayout dsl, uint32_t push_constant_size);
+	void cleanupPipeline(vk::Device& device, vk::Pipeline& pipeline, vk::PipelineLayout& pipeline_layout);
+
 
 // RENDERPASS FUNCTIONS
 	vk::RenderPass createRenderpass(vk::Device device, vk::SampleCountFlagBits msaa_samples, vk::Format format);
@@ -112,6 +122,10 @@ namespace hdx
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t index_count, vk::CommandBuffer cmd_buffer, vk::Buffer vertex_buffers[], vk::Buffer index_buffer, vk::DescriptorSet descriptor_set, uint64_t offsets[], uint32_t binding_count, uint32_t instance_count);
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t vertex_count, vk::CommandBuffer cmd_buffer, BufferDesc vertex_buffer_desc);
 	void recordComputeCommandBuffer(vk::Device device, vk::CommandBuffer cmd_buffer, vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, vk::DescriptorSet dsc_set, uint32_t x, uint32_t y, uint32_t z);
+
+	template <typename PC>
+	void recordComputeCommandBuffer(vk::Device device, vk::CommandBuffer cmd_buffer, vk::Pipeline pipeline,	vk::PipelineLayout pipeline_layout,	vk::DescriptorSet dsc_set, const PC& pc, uint32_t pc_size, uint32_t x, uint32_t y, uint32_t z);
+
 	void endRenderpass(vk::CommandBuffer command_buffer);
 	void beginSingleTimeCommands(vk::Device device, vk::CommandBuffer& command_buffer);
 	void endSingleTimeCommands(vk::Device device, vk::CommandBuffer &command_buffer, vk::CommandPool cmd_pool, vk::Queue queue);
@@ -120,7 +134,6 @@ namespace hdx
 // DESCRIPTOR FUNCTIONS
 	vk::DescriptorSetLayoutBinding createDescriptorSetLayoutBinding(uint8_t binding, vk::DescriptorType descriptor_type, vk::ShaderStageFlags shader_stage);
 	vk::DescriptorSetLayout createDescriptorSetLayout(const vk::Device& device, std::vector<vk::DescriptorSetLayoutBinding> layout_bindings);
-	vk::DescriptorSetLayout createComputeDescriptorSetLayout(const vk::Device& device);
 	vk::DescriptorPool createImageDescriptorPool(vk::Device device, uint32_t count);
 	vk::DescriptorPoolSize createDescriptorPoolSize(vk::DescriptorType descriptor_type, uint32_t count);
 	vk::DescriptorPool createDescriptorPool(vk::Device device, std::vector<vk::DescriptorPoolSize> pool_sizes, uint8_t max_sets);
@@ -136,6 +149,7 @@ namespace hdx
 	void findQueueFamilies(DeviceDesc& device_desc);
 	void getPhysicalDevices(vk::Instance instance, std::vector<DeviceDesc> &device_descs);
 	vk::Device createLogicalDevice(DeviceDesc device_desc, const std::vector<const char*> device_extensions, const std::vector<const char*> validation_layers, bool enable_validation_layers);
+	vk::Device createLogicalDevice(DeviceDesc device_desc, const std::vector<const char*> validation_layers, bool enable_validation_layers);
 	vk::SampleCountFlagBits getMaxUsableSampleCount(vk::PhysicalDevice physical_device);
 
 // IMAGE FUNCTIONS

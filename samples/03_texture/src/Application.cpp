@@ -58,9 +58,9 @@ Application::Application()
 	mvp.view = camera3D.getViewMatrix();
 	mvp.model = glm::mat4(1.0f);
 
-	window = new Window("HYDROXY - Particles(Compute)", WIDTH, HEIGHT);
+	window = new Window("Image Loading", WIDTH, HEIGHT);
 	window->getExtensions();
-	hdx::createInstance(instance, window, "Particles", enable_validation_layers, validation_layers);
+	hdx::createInstance(instance, window, "Texture", enable_validation_layers, validation_layers);
 	dldi = vk::DispatchLoaderDynamic(instance, vkGetInstanceProcAddr);
 	hdx::createDebugMessenger(debug_messenger, instance, dldi);
 	window->createSurface(surface, instance);
@@ -134,6 +134,7 @@ Application::Application()
 		throw std::runtime_error("failed to load texture image!");
 	}
 
+	pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
 	pipeline = hdx::createGraphicsPipeline(device, pipeline_layout, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
 
 	fillGrid(positionPtr, texCoordPtr, normalPtr, indexPtr, upVector, n, tangents, texCoords, vertex_count);

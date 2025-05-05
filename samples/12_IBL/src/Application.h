@@ -109,6 +109,7 @@ public:
 
 	uint32_t current_frame = 0;
 
+	vk::ImageView prefilter_image_view[6];
 	hdx::ImageDesc cube_texture;
 	hdx::BufferDesc cube_vb, sphere_vb, hdr_tb, sphere_ib, ub, light_ub, instance_b;
 	vk::Sampler cube_sampler;
@@ -132,11 +133,11 @@ public:
 	vk::PipelineLayout pipeline_layout, sphere_pl, ir_PL, pf_PL, brdf_PL;
 
 	vk::DescriptorPool descriptor_pool;
+	std::vector<vk::DescriptorPoolSize> pool_sizes;
+	std::vector<vk::WriteDescriptorSet> _WDS;
 	vk::DescriptorSetLayout _DSL, _DSL0;
 	vk::DescriptorSet _DS, _DS0;
 	std::vector<vk::DescriptorSetLayoutBinding> _DSLB, _DSLB0;
-	std::vector<vk::DescriptorPoolSize> pool_sizes;
-	std::vector<vk::WriteDescriptorSet> _WDS;
 	vk::DescriptorImageInfo _DII;
 	vk::DescriptorBufferInfo _DBI, _DBI_light, _DBI_transform;
 

@@ -307,7 +307,9 @@ Application::Application()
 	};
 	device.updateDescriptorSets(1, _WDS.data(), 0, nullptr);
 
-
+	pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
+	plane_PL = hdx::createPipelineLayout(device, _DSL_plane, 0);
+	shadow_PL = hdx::createPipelineLayout(device, _DSL_shadow, 0);
 	pipeline = hdx::createGraphicsPipeline(device, pipeline_layout, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
 	plane_pipeline = hdx::createGraphicsPipeline(device, plane_PL, renderpass, msaa_samples, "res/shaders/plane.vert.spv", "res/shaders/plane.frag.spv", binding_descriptions, attribute_descriptions, _DSL_plane, vk::PrimitiveTopology::eTriangleList, extent);
 	shadow_pipeline = hdx::createGraphicsPipeline(device, shadow_PL, shadow_rp, vk::SampleCountFlagBits::e1, "res/shaders/shadow.vert.spv", "res/shaders/shadow.frag.spv", binding_descriptions, attribute_descriptions, _DSL_shadow, vk::PrimitiveTopology::eTriangleList, extent);

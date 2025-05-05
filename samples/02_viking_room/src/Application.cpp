@@ -131,6 +131,9 @@ Application::Application()
 	room_DSLB.push_back(hdx::createDescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment));
 	room_DSLB.push_back(hdx::createDescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment));
 	room_DSL = hdx::createDescriptorSetLayout(device, room_DSLB);
+
+	room_PL = hdx::createPipelineLayout(device, room_DSL, 0);
+
 	room_pipeline = hdx::createGraphicsPipeline(device, room_PL, renderpass, msaa_samples, "res/shaders/model.vert.spv", "res/shaders/model.frag.spv", room_VIBD, room_VIAD, room_DSL, vk::PrimitiveTopology::eTriangleList, extent);
 	loadModel("res/models/viking_room.obj", room_vertices, room_indices, room_VB_size, room_IB_size);
 

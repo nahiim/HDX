@@ -316,6 +316,8 @@ Application::Application()
 	_WDS.push_back(hdx::createWriteDescriptorSet(_DS0, vk::DescriptorType::eCombinedImageSampler, _DII_sphere, 2));
 	device.updateDescriptorSets(3, _WDS.data(), 0, nullptr);
 
+	pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
+	sphere_pl = hdx::createPipelineLayout(device, _DSL0, 0);
 	pipeline = hdx::createGraphicsPipeline(device, pipeline_layout, renderpass, msaa_samples, "res/shaders/skybox.vert.spv", "res/shaders/skybox.frag.spv", cube_binding_descriptions, cube_attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
 	sphere_pipeline = hdx::createGraphicsPipeline(device, sphere_pl, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL0, vk::PrimitiveTopology::eTriangleList, extent);
 
