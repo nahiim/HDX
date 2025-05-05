@@ -41,11 +41,18 @@ This project is a Vulkan-based 3D rendering engine developed in C++. The engine 
 1. **Clone the repository**:
    ```bash
    git clone https://github.com/nahiim/HDX.git
+
+   ```
+2. **Navigate to a sample directory and generate project files:**
+   ```
    cd HDX
+   cd samples <XX_Sample_name>
+   cmake -B build -S .
    ```
-2. **Create a build directory and generate project files:**
+3. **Run sample:**
    ```
-   mkdir build
    cd build
-   cmake ..
+   Open the .sln file
+   set as startup project
+   Run
    ```
