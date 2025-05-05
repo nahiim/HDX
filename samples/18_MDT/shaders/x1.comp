@@ -1,0 +1,30 @@
+
+#version 460
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+layout(std430, binding = 2) buffer SSB
+{
+    uint ssb[];
+};
+
+layout(binding = 3) uniform UBO
+{
+    uint Nx;    // Image width
+    uint Ny;    // Image height
+};
+
+void main()
+{
+    uint y = gl_GlobalInvocationID.y;
+
+    if (y < Ny)
+    {
+		for (uint x = 1; x < Nx; x++)
+		{
+			uint idx = y * Nx + x;
+			uint prev_plus_1 = ssb[idx-1] + 1;
+			ssb[idx] = ssb[idx] > prev_plus_1 ? prev_plus_1 : ssb[idx];
+		}
+    }
+}

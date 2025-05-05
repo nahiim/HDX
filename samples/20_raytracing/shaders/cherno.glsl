@@ -1,0 +1,244 @@
+
+#version 460
+// #extension GL_ARB_gpu_shader_fp64 : enable
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+float pos_inf = 1.0 / 0.0;
+
+
+struct Ray
+{
+    vec3 origin;
+    vec3 direction;
+};
+struct HitPayload
+{
+    float HitDistance;
+    vec3 WorldPosition;
+    vec3 WorldNormal;
+
+    int ObjectIndex;
+};
+struct Sphere
+{
+    vec3 center;
+    float radius;
+    vec3 color;
+    float roughness;
+    float emission;
+};
+const int NUM_SPHERES = 4;
+Sphere spheres[NUM_SPHERES] = Sphere[](
+    Sphere(vec3(0.0, 1.0, 0.0), 1.0, vec3(1.0, 0.0, 0.0), 1.0, 0.0),  // lambertian
+    Sphere(vec3(3.0, 5.0, 0.0), 1.0, vec3(1.0, 1.0, 1.0), 0.0, 20.0), // EMISSIVE
+    Sphere(vec3(6.0, 1.0, 0.0), 1.0, vec3(1.0, 0, 0.1), 0.0, 0.0), // Glass
+    Sphere(vec3(0.0, -1000.0, 0.0), 1000.0, vec3(0.1, 1.0, 0.1), 0.0, 0.0)  // Floor
+);
+
+layout(std430, binding = 2) buffer PixelSSB
+{
+    vec4 pixels[];
+};
+layout(std430, binding = 5) buffer AccumPixelSSB
+{
+    vec4 accum_ssb[];
+};
+
+layout(binding = 3) uniform UBO
+{
+    uint frame_index;
+    uint Nx;    // Image width
+    uint Ny;    // Image height
+
+    vec3 cam_position;
+    vec3 cam_direction;
+    vec3 cam_up;
+    vec3 cam_right;
+};
+
+layout(std430, binding = 4) buffer RaySSB
+{
+    Ray rays[];
+};
+
+float linear_to_gamma(float linear_component)
+{
+    if (linear_component > 0)
+        return sqrt(linear_component);
+
+    return 0;
+}
+
+
+float rand(vec2 co)
+{
+    float a = 12.9898;
+    float b = 78.233;
+    float c = 43758.5453;
+    float dt = dot(co, vec2(a,b));
+    float sn = mod(dt, 3.14159);
+    return fract(sin(sn) * c);
+}
+vec3 random(float min, float max) {
+    float range = max - min;
+    vec2 base = vec2(gl_GlobalInvocationID.xy * frame_index);
+    return vec3(
+        min + rand(base + vec2(0.0, 0.0)) * range,
+        min + rand(base + vec2(1.0, 1.0)) * range,
+        min + rand(base + vec2(2.0, 2.0)) * range
+    );
+}
+float random_float() {
+    return fract(sin(dot(gl_GlobalInvocationID.xy * frame_index, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+vec3 inUnitSphere()
+{
+    return normalize(random(-1.0f, 1.0f));
+}
+
+
+HitPayload ClosestHit(Ray ray, float hitDistance, int objectIndex)
+{
+    HitPayload payload;
+    payload.HitDistance = hitDistance;
+    payload.ObjectIndex = objectIndex;
+
+    Sphere closestSphere = spheres[objectIndex];
+
+    vec3 origin = ray.origin - closestSphere.center;
+    payload.WorldPosition = origin + ray.direction * hitDistance;
+    payload.WorldNormal = normalize(payload.WorldPosition);
+
+    payload.WorldPosition += closestSphere.center;
+
+    return payload;
+}
+
+HitPayload Miss(Ray ray)
+{
+    HitPayload payload;
+    payload.HitDistance = -1.0f;
+    return payload;
+}
+
+
+HitPayload traceRay(Ray ray)
+{
+    int closestSphere = -1;
+    float hitDistance = pos_inf;
+
+    for (uint i = 0; i < NUM_SPHERES; i++)
+    {
+        Sphere sphere = spheres[i];
+        vec3 origin = ray.origin - sphere.center;
+
+        float a = dot(ray.direction, ray.direction);
+        float b = 2.0f * dot(origin, ray.direction);
+        float c = dot(origin, origin) - sphere.radius * sphere.radius;
+
+        // Quadratic forumula discriminant:
+        // b^2 - 4ac
+
+        float discriminant = b * b - 4.0f * a * c;
+        if (discriminant < 0.0f)
+            continue;
+
+        // Quadratic formula:
+        // (-b +- sqrt(discriminant)) / 2a
+
+        // float t0 = (-b + glm::sqrt(discriminant)) / (2.0f * a); // Second hit distance (currently unused)
+        float closestT = (-b - sqrt(discriminant)) / (2.0f * a);
+        if (closestT > 0.0f && closestT < hitDistance)
+        {
+            hitDistance = closestT;
+            closestSphere = int(i);
+        }
+    }
+
+
+    if (closestSphere < 0)
+        return Miss(ray);
+
+    return ClosestHit(ray, hitDistance, closestSphere);
+}
+
+
+
+
+
+// packing function (RGBA order)
+uint packUint8To32(uint R, uint G, uint B, uint A)
+{
+    return (A << 24) | (B << 16) | (G << 8) | R;
+}
+
+
+// Hash by Dave Hoskins, simplified
+float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 345.45));
+    p += dot(p, p + 34.345);
+    return fract(p.x * p.y);
+}
+
+vec4 perPixel(float x, float y)
+{
+    float u = ((float(x) + 0.5) / float(Nx)) * 2.0 - 1.0;
+    float v = ((float(y) + 0.5) / float(Ny)) * 2.0 - 1.0;
+
+    Ray ray;
+    ray.origin = cam_position;
+    ray.direction = normalize(cam_direction + u * cam_right + v * cam_up);
+    
+    vec3 light = vec3(0.0f);
+    vec3 contribution = vec3(1.0f);
+
+    int bounces = 5;
+    for (int i = 0; i < bounces; i++)
+    {
+        HitPayload payload = traceRay(ray);
+        if (payload.HitDistance < 0.0f)
+        {
+            vec3 skyColor = vec3(0.6f, 0.7f, 0.9f);
+            break;
+        }
+
+        Sphere sphere = spheres[payload.ObjectIndex];
+
+        contribution *= sphere.color;
+        
+        // radiance += throughput * sphere.emission * sphere.color;
+        light += sphere.emission * contribution;//sphere.color;
+        // contribution *= sphere.color;
+
+        ray.origin = payload.WorldPosition + payload.WorldNormal * 0.0001f;
+        ray.direction = normalize(payload.WorldNormal + inUnitSphere());
+        // ray.direction = reflect(ray.direction, payload.WorldNormal + sphere.roughness * random(-0.5f, 0.5f));
+    }
+
+    return vec4(light, 1.0);
+}
+
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= Nx || y >= Ny) return; // Bounds check
+
+    uint idx = Nx * y + x;
+
+    if(frame_index == 1)
+        accum_ssb[idx] = vec4(0.0f);
+
+    vec4 color = perPixel(x, y);
+    accum_ssb[idx] += color;
+
+    vec4 accum = accum_ssb[idx];
+    accum /= float(frame_index);
+
+    // accum = clamp(accum, vec4(0.0), vec4(1.0));
+    pixels[idx] = (accum);
+}

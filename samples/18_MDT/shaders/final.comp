@@ -1,0 +1,43 @@
+
+#version 450
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+layout(std430, binding = 2) buffer SSB
+{
+    uint ssb[];
+};
+
+layout(binding = 3) uniform UBO
+{
+    uint Nx;    // Image width
+    uint Ny;    // Image height
+};
+
+// packing function (RGBA order)
+uint packUint8to32(uint R, uint G, uint B, uint A)
+{
+    return (A << 24) | (R << 16) | (G << 8) | B;
+}
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    uint Dmax = Nx/8; // Maximum possible distance
+
+    if (x < Nx && y < Ny)
+    {
+        uint idx = (y * Nx) + x; // Flatten grid
+
+        // Ensure floating-point division for correct scaling
+        float normalizedDist = float(ssb[idx]) / float(Dmax);
+        
+        // Clamp the color value to [0, 255]
+        uint color = 255 - uint(clamp(normalizedDist * 255.0, 0.0, 255.0));
+
+        // Pack color as RGBA
+        ssb[idx] = packUint8to32(color, color, color, 255);
+    }
+}
