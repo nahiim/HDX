@@ -1,0 +1,65 @@
+
+#version 450
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+layout(std430, binding = 2) buffer PixelSSB
+{
+    uint pixels[];
+};
+layout(std430, binding = 6) buffer BrightnessSSB
+{
+    vec4 brightness_map[];
+};
+layout(std430, binding = 7) buffer HDR_SSB
+{
+    vec4 hdr_map[];
+};
+layout(binding = 3) uniform UBO
+{
+    uint frame_index;
+    uint Nx;    // Image width
+    uint Ny;    // Image height
+
+    vec3 cam_position;
+    vec3 cam_direction;
+    vec3 cam_up;
+    vec3 cam_right;
+};
+
+vec4 tonemapACES(vec4 color)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+
+    vec3 clamped = clamp((color.rgb * (a * color.rgb + b)) / (color.rgb * (c * color.rgb + d) + e), 0.0, 1.0);
+
+    return vec4(clamped, color.a); // preserve alpha
+}
+
+// packing function (RGBA order)
+uint packUint8to32(uint R, uint G, uint B, uint A)
+{
+    return (A << 24) | (B << 16) | (G << 8) | R;
+}
+
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= Nx || y >= Ny) return; // Bounds check
+
+    uint idx = Nx * y + x;
+
+    vec4 hdr_color = hdr_map[idx] + brightness_map[idx];
+
+    vec4 tonemapped = tonemapACES(hdr_color);
+    uvec4 color8bit = uvec4(tonemapped * 255.0);
+
+    pixels[idx] = packUint8to32(color8bit.r, color8bit.g, color8bit.b, color8bit.a);
+}

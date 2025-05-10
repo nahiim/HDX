@@ -92,9 +92,9 @@ Application::Application()
 	hdx::copyToDevice(device, ub, &mvp, sizeof(MVP));
 
 	hdx::beginSingleTimeCommands(device, s_command_buffer);
-		hdx::transitionImageLayout(device, texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
+		hdx::transitionImageLayout(device, texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
 		hdx::copyBufferToImage(device, tb, texture, image_width, image_height, 6, s_command_buffer);
-		hdx::transitionImageLayout(device, texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
+		hdx::transitionImageLayout(device, texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
 	hdx::endSingleTimeCommands(device, s_command_buffer, command_pool, queue);
 
 	binding_descriptions = { hdx::getBindingDescription(0, sizeof(float) * 8, vk::VertexInputRate::eVertex) };

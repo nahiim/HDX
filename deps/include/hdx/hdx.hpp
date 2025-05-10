@@ -128,7 +128,8 @@ namespace hdx
 
 	void endRenderpass(vk::CommandBuffer command_buffer);
 	void beginSingleTimeCommands(vk::Device device, vk::CommandBuffer& command_buffer);
-	void endSingleTimeCommands(vk::Device device, vk::CommandBuffer &command_buffer, vk::CommandPool cmd_pool, vk::Queue queue);
+	void endSingleTimeCommands(vk::Device device, vk::CommandBuffer& command_buffer, vk::CommandPool cmd_pool, vk::Queue queue);
+	void endSingleTimeCommands(vk::Semaphore wait_semaphore, vk::Semaphore signal_semaphore, vk::Fence fence, vk::CommandBuffer& command_buffer, vk::Queue queue);
 	void submitCommand(vk::CommandBuffer command_buffer, vk::Queue queue, vk::Fence fence);
 
 // DESCRIPTOR FUNCTIONS
@@ -161,8 +162,10 @@ namespace hdx
     void cleanupImage(vk::Device device, ImageDesc image_desc);
     vk::Framebuffer createFramebuffer(const vk::Device& device, vk::ImageView swapchain_imageview, vk::ImageView color_imageview, const vk::ImageView& depth_imageview, const vk::RenderPass& rp, vk::Extent2D extent);
 	vk::Framebuffer createFramebuffer(const vk::Device& device, vk::ImageView imageview, const vk::RenderPass& rp, uint32_t width, uint32_t height);
-	void transitionImageLayout(vk::Device device, ImageDesc image_desc, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count);
-	void transitionImageLayout(vk::CommandBuffer commandBuffer, ImageDesc texture, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage);
+	void copyImage(vk::CommandBuffer cmdBuffer, vk::Image srcImage,	vk::Image dstImage, vk::Extent3D extent, vk::ImageLayout srcOldLayout, vk::ImageLayout dstOldLayout, vk::ImageLayout srcFinalLayout,	vk::ImageLayout dstFinalLayout);
+	void transitionImageLayout(vk::Device device, vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count);
+	void transitionImageLayout(vk::Device device, vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count);
+	void transitionImageLayout(vk::CommandBuffer commandBuffer, vk::Image image, vk::Format format, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::PipelineStageFlags srcStage, vk::PipelineStageFlags dstStage);
 	void copyBufferToImage(vk::Device device, BufferDesc buffer_desc, ImageDesc image_desc, uint32_t width, uint32_t height, uint32_t layer_count, vk::CommandBuffer command_buffer);
     void generateMipmaps(vk::Device device, vk::CommandBuffer command_buffer, vk::Image image, vk::Format imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels, vk::FormatProperties format_properties);
     vk::Image createTextureImage(vk::Device device, const char* path, uint32_t mip_levels, vk::SampleCountFlagBits msaa_samples, vk::DeviceMemory& textureImageMemory, DeviceDesc device_desc, vk::CommandBuffer command_buffer, vk::Queue queue);

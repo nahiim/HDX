@@ -746,7 +746,7 @@ namespace hdx
             format.colorSpace,
             extent,
             1,  // Number of layers
-            vk::ImageUsageFlagBits::eColorAttachment,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferDst,
             vk::SharingMode::eExclusive,  // Sharing mode
             0, nullptr,                    // Queue family indices (ignored when exclusive)
             capabilities.currentTransform,
@@ -1069,8 +1069,26 @@ namespace hdx
 
 		queue.submit({ submitInfo });
 		queue.waitIdle();
+	}
+	void endSingleTimeCommands(vk::Semaphore wait_semaphore, vk::Semaphore signal_semaphore, vk::Fence fence, vk::CommandBuffer& command_buffer, vk::Queue queue)
+	{
+		command_buffer.end();
 
-//		device.freeCommandBuffers(cmd_pool, { command_buffer });
+		vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eTransfer;
+
+		vk::SubmitInfo submitInfo{};
+		submitInfo.sType = vk::StructureType::eSubmitInfo;
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = &wait_semaphore;
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = &signal_semaphore;
+		submitInfo.pWaitDstStageMask = &waitStage;
+
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &command_buffer;
+
+		queue.submit({ submitInfo }, fence);
+		queue.waitIdle();
 	}
 
 	void submitCommand(vk::CommandBuffer command_buffer, vk::Queue queue, vk::Fence fence)
@@ -1259,9 +1277,104 @@ namespace hdx
 
 		return framebuffer;
 	}
+
+	void copyImage(
+		vk::CommandBuffer cmdBuffer,
+		vk::Image srcImage,
+		vk::Image dstImage,
+		vk::Extent3D extent,
+		vk::ImageLayout srcOldLayout,
+		vk::ImageLayout dstOldLayout,
+		vk::ImageLayout srcFinalLayout,
+		vk::ImageLayout dstFinalLayout)
+	{
+		// === 1. Prepare barriers to TRANSFER layouts ===
+		vk::ImageMemoryBarrier srcBarrier(
+			{}, vk::AccessFlagBits::eTransferRead,
+			srcOldLayout, vk::ImageLayout::eTransferSrcOptimal,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			srcImage,
+			{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		);
+
+		vk::ImageMemoryBarrier dstBarrier(
+			{}, vk::AccessFlagBits::eTransferWrite,
+			dstOldLayout, vk::ImageLayout::eTransferDstOptimal,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			dstImage,
+			{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		);
+
+		cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTopOfPipe,
+			vk::PipelineStageFlagBits::eTransfer,
+			{}, nullptr, nullptr,
+			{ srcBarrier, dstBarrier }
+		);
+
+		// === 2. Copy image ===
+		vk::ImageCopy copyRegion(
+			{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+			{ 0, 0, 0 },
+			{ vk::ImageAspectFlagBits::eColor, 0, 0, 1 },
+			{ 0, 0, 0 },
+			extent
+		);
+
+		cmdBuffer.copyImage(
+			srcImage, vk::ImageLayout::eTransferSrcOptimal,
+			dstImage, vk::ImageLayout::eTransferDstOptimal,
+			{ copyRegion }
+		);
+
+		// === 3. Final layout transitions ===
+		vk::AccessFlags srcFinalAccessMask =
+			(srcFinalLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
+			? vk::AccessFlagBits::eShaderRead
+			: vk::AccessFlags{};
+
+		vk::AccessFlags dstFinalAccessMask =
+			(dstFinalLayout == vk::ImageLayout::ePresentSrcKHR)
+			? vk::AccessFlags{} // presentation doesn't require access flags
+			: (dstFinalLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
+			? vk::AccessFlagBits::eShaderRead
+			: vk::AccessFlags{};
+
+		vk::PipelineStageFlags dstFinalStage =
+			(dstFinalLayout == vk::ImageLayout::ePresentSrcKHR)
+			? vk::PipelineStageFlagBits::eBottomOfPipe
+			: vk::PipelineStageFlagBits::eFragmentShader;
+
+		vk::ImageMemoryBarrier srcFinalBarrier(
+			vk::AccessFlagBits::eTransferRead, srcFinalAccessMask,
+			vk::ImageLayout::eTransferSrcOptimal, srcFinalLayout,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			srcImage,
+			{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		);
+
+		vk::ImageMemoryBarrier dstFinalBarrier(
+			vk::AccessFlagBits::eTransferWrite, dstFinalAccessMask,
+			vk::ImageLayout::eTransferDstOptimal, dstFinalLayout,
+			VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED,
+			dstImage,
+			{ vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		);
+
+		cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eTransfer,
+			dstFinalStage,
+			{}, nullptr, nullptr,
+			{ srcFinalBarrier, dstFinalBarrier }
+		);
+	}
+
+
+
+
 	void transitionImageLayout(
 		vk::CommandBuffer commandBuffer,
-		ImageDesc texture,
+		vk::Image image,
 		vk::Format format,
 		vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout,
@@ -1275,7 +1388,7 @@ namespace hdx
 		barrier.newLayout = newLayout;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = texture.image;
+		barrier.image = image;
 		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
 		barrier.subresourceRange.baseMipLevel = 0;
 		barrier.subresourceRange.levelCount = 1;
@@ -1303,7 +1416,7 @@ namespace hdx
 			1, &barrier
 		);
 	}
-    void transitionImageLayout(vk::Device device, ImageDesc image_desc, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count)
+    void transitionImageLayout(vk::Device device, vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count)
     {
         vk::ImageMemoryBarrier barrier{};
         barrier.sType = vk::StructureType::eImageMemoryBarrier;
@@ -1311,7 +1424,7 @@ namespace hdx
         barrier.newLayout = newLayout;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.image = image_desc.image;
+        barrier.image = image;
         barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.levelCount = mip_levels;
@@ -1369,6 +1482,23 @@ namespace hdx
 			sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
 			destinationStage = vk::PipelineStageFlagBits::eComputeShader;
 		}
+		else if (oldLayout == vk::ImageLayout::ePresentSrcKHR && newLayout == vk::ImageLayout::eTransferDstOptimal)
+		{
+			barrier.srcAccessMask = vk::AccessFlags(); // Presentation engine
+			barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+			sourceStage = vk::PipelineStageFlagBits::eBottomOfPipe;
+			destinationStage = vk::PipelineStageFlagBits::eTransfer;
+		}
+		else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eTransferSrcOptimal)
+		{
+			barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+			barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+
+			sourceStage = vk::PipelineStageFlagBits::eTransfer;
+			destinationStage = vk::PipelineStageFlagBits::eTransfer;
+		}
+
 
         command_buffer.pipelineBarrier(
             sourceStage, destinationStage,

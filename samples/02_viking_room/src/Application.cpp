@@ -154,9 +154,9 @@ Application::Application()
 	hdx::createImageDesc(device, room_texture, vk::Format::eR8G8B8A8Srgb, texWidth, texHeight, vk::SampleCountFlagBits::e1, sampled_usage_flags, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_2d, 1, {}, device_desc, 1);
 
 	hdx::beginSingleTimeCommands(device, s_command_buffer);
-		hdx::transitionImageLayout(device, room_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 1);
+		hdx::transitionImageLayout(device, room_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 1);
 		hdx::copyBufferToImage(device, room_TB, room_texture, texWidth, texHeight, 1, s_command_buffer);
-		hdx::transitionImageLayout(device, room_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 1);
+		hdx::transitionImageLayout(device, room_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 1);
 	hdx::endSingleTimeCommands(device, s_command_buffer, command_pool, queue);
 
 	hdx::cleanupBuffer(device, room_TB);

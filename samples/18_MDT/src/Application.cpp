@@ -239,9 +239,9 @@ Application::Application()
 	
 
 	hdx::beginSingleTimeCommands(device, command_buffer);
-		hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
+		hdx::transitionImageLayout(device, input_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
 		hdx::copyBufferToImage(device, ssb, input_texture, image_width, image_height, 1, command_buffer);
-		hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
+		hdx::transitionImageLayout(device, input_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
 	hdx::endSingleTimeCommands(device, command_buffer, command_pool, queue);
 
 	if (image_height == image_width)

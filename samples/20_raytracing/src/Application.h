@@ -35,13 +35,6 @@ struct Dimension
 	uint32_t z;
 };
 
-struct Vertex
-{
-	glm::vec3 position;
-	glm::vec2 texcoord;
-	glm::vec3 normal;
-};
-
 struct Ray
 {
 	alignas(16) glm::vec3 origin;
@@ -63,7 +56,7 @@ private:
 
 	std::vector<hdx::DeviceDesc> device_descs;
 
-	uint32_t Nx = 1024;
+	uint32_t Nx = 512;
 	uint32_t Ny = Nx;
 
 
@@ -73,7 +66,7 @@ public:
 	void update(float delta_time, AppState& app_state);
 
 	Window* window;
-	const uint32_t WIDTH = 640, HEIGHT = 480;
+	const uint32_t WIDTH = Nx, HEIGHT = Nx;
 
 	hdx::DeviceDesc device_desc;
 	vk::Device device;
@@ -92,9 +85,6 @@ public:
 	vk::Extent2D extent;
 	uint32_t swapchain_size;
 
-	std::vector<vk::VertexInputBindingDescription> binding_descriptions;
-	std::vector<vk::VertexInputAttributeDescription> attribute_descriptions;
-
 	hdx::ImageDesc color_image, depth_image;
 
 	vk::RenderPass renderpass;
@@ -108,10 +98,10 @@ public:
 
 	uint32_t current_frame = 0;
 
-	vk::Pipeline graphics_pipeline, rtx_pipeline;
-	vk::PipelineLayout graphics_pipeline_layout, rtx_pipeline_layout;
+	vk::Pipeline rtx_pipeline, h_blur, v_blur, composite;
+	vk::PipelineLayout rtx_pipeline_layout;
 
-	hdx::BufferDesc vb_desc, ub_desc, ib_desc, ubo, ssb, accum_ssb, ray_ssb;
+	hdx::BufferDesc ub_desc, ubo, ssb, accum_ssb, ray_ssb, bright_ssb, hdr_ssb, hdr_tb;
 	float dt;
 
 	vk::DescriptorPool descriptor_pool;
@@ -120,11 +110,12 @@ public:
 	vk::DescriptorSetLayout _DSL;
 	vk::DescriptorSet _DS;
 	std::vector<vk::DescriptorSetLayoutBinding> _DSLB;
-	vk::DescriptorBufferInfo mvp_info, ssb_info, ray_ssb_info, ubo_info, accum_ssb_info;
+	vk::DescriptorBufferInfo mvp_info, ssb_info, ray_ssb_info, ubo_info, accum_ssb_info, bright_ssb_info, hdr_ssb_info;
 	vk::DescriptorImageInfo image_info;
 
-	uint32_t image_width, image_height, bytes_per_pixel;
-	hdx::ImageDesc input_texture, output_texture;
+	uint32_t image_width, image_height;
+	int hdr_width, hdr_height, hdr_channels;
+	hdx::ImageDesc input_texture, output_texture, hdr_texture;
 	vk::Sampler sampler;
 	vk::ImageUsageFlags sampled_usage_flags = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled;
 	vk::ImageViewType view_type_2d = vk::ImageViewType::e2D;
@@ -132,22 +123,6 @@ public:
 	vk::SampleCountFlagBits msaa_samples;
 
 	float last_frame_time = 0.0f;
-
-	vk::PipelineStageFlags wait_stages[2];
-
-	
-	std::vector<Vertex> vertices = {
-		{{-0.5f, -0.5f, 0.0f}, {0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-		{{ 0.5f, -0.5f, 0.0f}, {1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}},
-		{{ 0.5f,  0.5f, 0.0f}, {1.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
-		{{-0.5f,  0.5f, 0.0f}, {0.0f, 1.0f}, {0.0f, 0.0f, 1.0f}},
-	};
-	std::vector<uint32_t> indices = {
-		0, 1, 2,
-		2, 3, 0
-	};
-	uint32_t index_count = 6;
-	uint32_t vertex_count = 4;
 
 	MVP mvp;
 	UBO ray_cam_ubo;
@@ -159,8 +134,6 @@ public:
 
 	uint32_t fr_id = 1;
 
-	uint8_t* zero_bf;
 	bool cameraMoved = false;
-	bool reset = false;
 	uint32_t screenshot_index = 0;
 };

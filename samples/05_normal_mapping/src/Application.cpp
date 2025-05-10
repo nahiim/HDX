@@ -207,13 +207,13 @@ Application::Application()
 	hdx::copyToDevice(device, light_ub, &light, sizeof(Light));
 
 	hdx::beginSingleTimeCommands(device, s_cmd);
-		hdx::transitionImageLayout(device, diffuse_image_desc, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
+		hdx::transitionImageLayout(device, diffuse_image_desc.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
 		hdx::copyBufferToImage(device, diffuse_tb, diffuse_image_desc, diffuse_width, diffuse_height, 1, s_cmd);
-		hdx::transitionImageLayout(device, diffuse_image_desc, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
+		hdx::transitionImageLayout(device, diffuse_image_desc.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
 
-		hdx::transitionImageLayout(device, normal_image_desc, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
+		hdx::transitionImageLayout(device, normal_image_desc.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
 		hdx::copyBufferToImage(device, normal_tb, normal_image_desc, normal_width, normal_height, 1, s_cmd);
-		hdx::transitionImageLayout(device, normal_image_desc, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
+		hdx::transitionImageLayout(device, normal_image_desc.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_cmd, 1, 1);
 	hdx::endSingleTimeCommands(device, s_cmd, command_pool, queue);
 
 

@@ -1,0 +1,44 @@
+
+#version 450
+
+layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
+
+layout(std430, binding = 6) buffer BrightnessSSB
+{
+    vec4 brightness_map[];
+};
+layout(binding = 3) uniform UBO
+{
+    uint frame_index;
+    uint Nx;    // Image width
+    uint Ny;    // Image height
+
+    vec3 cam_position;
+    vec3 cam_direction;
+    vec3 cam_up;
+    vec3 cam_right;
+};
+
+float weight[5] = float[] (0.227027, 0.1945946, 0.1216216, 0.054054, 0.016216);
+
+void main()
+{
+    uint x = gl_GlobalInvocationID.x;
+    uint y = gl_GlobalInvocationID.y;
+
+    if (x >= Nx || y >= Ny) return; // Bounds check
+
+    // vec2 tex_offset = 1.0 / textureSize(image, 0); // gets size of single texel
+
+    uint idx = Nx * y + x;
+
+    vec3 result = brightness_map[idx].rgb * weight[0]; // current fragment's contribution
+
+    for(uint i = 1; i < 5; ++i)
+    {
+        result += brightness_map[idx + Nx - i].rgb * weight[i]; // texture(image, TexCoords + vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+        result += brightness_map[idx + Nx + i].rgb * weight[i]; // texture(image, TexCoords - vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+    }
+
+    brightness_map[idx] = vec4(result, 1.0);
+}

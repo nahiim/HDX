@@ -157,9 +157,9 @@ Application::Application()
 	hdx::copyToDevice(device, instance_b, instances.data(), sizeof(InstanceData) * instance_count);
 
 	hdx::beginSingleTimeCommands(device, s_command_buffer);
-	hdx::transitionImageLayout(device, cube_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
+	hdx::transitionImageLayout(device, cube_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
 	hdx::copyBufferToImage(device, cube_tb, cube_texture, image_width, image_height, 6, s_command_buffer);
-	hdx::transitionImageLayout(device, cube_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
+	hdx::transitionImageLayout(device, cube_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR8G8B8A8Srgb, s_command_buffer, 1, 6);
 	hdx::endSingleTimeCommands(device, s_command_buffer, command_pool, queue);
 
 	pool_sizes = {

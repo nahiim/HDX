@@ -156,9 +156,9 @@ Application::Application()
 	hdx::copyToDevice(device, instance_b, instances.data(), sizeof(InstanceData) * instance_count);
 
 	hdx::beginSingleTimeCommands(device, s_command_buffer);
-		hdx::transitionImageLayout(device, cube_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, cube_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
 		hdx::copyBufferToImage(device, hdr_tb, cube_texture, 768, 768, 6, s_command_buffer);
-		hdx::transitionImageLayout(device, cube_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, cube_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
 
 	hdx::createImageDesc(device, ir_texture, vk::Format::eR32G32B32A32Sfloat, 32, 32, vk::SampleCountFlagBits::e1, cubemap_usage_flags | vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_cube, 6, vk::ImageCreateFlagBits::eCubeCompatible, device_desc, mip_levels);
 	hdx::createImageDesc(device, pf_texture, vk::Format::eR32G32B32A32Sfloat, 768, 768, vk::SampleCountFlagBits::e1, cubemap_usage_flags | vk::ImageUsageFlagBits::eStorage, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_cube, 6, vk::ImageCreateFlagBits::eCubeCompatible, device_desc, mip_levels);
@@ -211,9 +211,9 @@ Application::Application()
 	brdf_pipeline = hdx::createComputePipeline(device, _DSL, brdf_PL, "res/shaders/brdf_lut.comp.spv");
 
 
-		hdx::transitionImageLayout(device, ir_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
-		hdx::transitionImageLayout(device, pf_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
-		hdx::transitionImageLayout(device, brdf_lut, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR16G16B16A16Sfloat, s_command_buffer, mip_levels, 1);
+		hdx::transitionImageLayout(device, ir_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, pf_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR32G32B32A32Sfloat, s_command_buffer, mip_levels, 6);
+		hdx::transitionImageLayout(device, brdf_lut.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral, vk::Format::eR16G16B16A16Sfloat, s_command_buffer, mip_levels, 1);
 	hdx::endSingleTimeCommands(device, s_command_buffer, command_pool, queue);
 
 	// Irradiance map generation

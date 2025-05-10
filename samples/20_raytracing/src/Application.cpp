@@ -12,27 +12,11 @@ std::string GetScreenshotFilename(uint32_t& screenshot_index)
 
 bool screenshot(vk::Device device, hdx::BufferDesc ssb, int width, int height, uint32_t& screenshot_index)
 {
-	std::vector<glm::vec4> imageData(width * height);
-	hdx::copyFromDevice(device, ssb, imageData.data(), sizeof(glm::vec4) * width * height);
-
-	std::vector<uint8_t> rgba8(width * height * 4);
-	for (int i = 0; i < width * height; ++i) {
-		const glm::vec4& px = imageData[i];
-		rgba8[i * 4 + 0] = static_cast<uint8_t>(std::clamp(px.r, 0.0f, 1.0f) * 255.0f);
-		rgba8[i * 4 + 1] = static_cast<uint8_t>(std::clamp(px.g, 0.0f, 1.0f) * 255.0f);
-		rgba8[i * 4 + 2] = static_cast<uint8_t>(std::clamp(px.b, 0.0f, 1.0f) * 255.0f);
-		rgba8[i * 4 + 3] = static_cast<uint8_t>(std::clamp(px.a, 0.0f, 1.0f) * 255.0f);
-	}
-
-	std::vector<uint8_t> flippedRgba8(width * height * 4);
-	for (int y = 0; y < height; ++y) {
-		int srcRow = y;
-		int dstRow = height - 1 - y;
-		std::memcpy(&flippedRgba8[dstRow * width * 4], &rgba8[srcRow * width * 4], width * 4);
-	}
+	std::vector<uint8_t> imageData(4 * width * height);
+	hdx::copyFromDevice(device, ssb, imageData.data(), 4 * width * height);
 
 	std::string filename = GetScreenshotFilename(screenshot_index);
-	int success = stbi_write_png(filename.c_str(), width, height, 4, flippedRgba8.data(), width * 4);
+	int success = stbi_write_png(filename.c_str(), width, height, 4, imageData.data(), width * 4);
 	return success != 0;
 }
 
@@ -53,12 +37,8 @@ Application::Application()
 	hdx::createDebugMessenger(debug_messenger, instance, dldi);
 	window->createSurface(surface, instance);
 
-	VkInstance raw_instance;
-
-	void* inas = reinterpret_cast<void*>(raw_instance);
-	raw_instance = reinterpret_cast<VkInstance>(inas);
-
-	hdx::getPhysicalDevices(raw_instance, device_descs);
+	
+	hdx::getPhysicalDevices(instance, device_descs);
 	device_desc = device_descs[0];
 	hdx::findQueueFamilies(device_desc);
 
@@ -114,13 +94,6 @@ Application::Application()
 		framebuffers.push_back(hdx::createFramebuffer(device, swapchain_imageviews[i], color_image.imageview, depth_image.imageview, renderpass, extent));
 	}
 
-	binding_descriptions = { hdx::getBindingDescription(0, sizeof(Vertex), vk::VertexInputRate::eVertex) };
-	attribute_descriptions = { (
-		hdx::getAttributeDescription(0, 0, vk::Format::eR32G32B32Sfloat, 0)),
-		hdx::getAttributeDescription(0, 1, vk::Format::eR32G32Sfloat, offsetof(Vertex, texcoord)),
-		hdx::getAttributeDescription(0, 2, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, normal)
-	) };
-
 	image_available_semaphore = hdx::createSemaphore(device);
 	render_finished_semaphore = hdx::createSemaphore(device);
 	in_flight_fence = hdx::createFence(device);
@@ -128,25 +101,42 @@ Application::Application()
 	command_pool = hdx::createCommandPool(device, queue_family_index);
 	command_buffer = hdx::allocateCommandBuffer(device, command_pool);
 
-	bytes_per_pixel = sizeof(glm::vec4);
-
 	ray_cam = RayCamera(glm::vec3(-5.0f, 3.0f, 0.0f), glm::vec3(1.0f, 0.0f, .0f));
 
 	ray_cam_ubo = { fr_id, Nx, Ny, ray_cam.position, ray_cam.direction, ray_cam.up, ray_cam.right };
 	image_width = ray_cam_ubo.Nx, image_height = ray_cam_ubo.Ny;
-	uint64_t image_size = static_cast<uint64_t>(image_width) * image_height * bytes_per_pixel;
 
-	hdx::createImageDesc(device, input_texture, vk::Format::eR32G32B32A32Sfloat, image_width, image_height, vk::SampleCountFlagBits::e1, sampled_usage_flags, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_2d, 1, {}, device_desc, 1);
-	sampler = hdx::createTextureSampler(device, device_desc.properties, 0);
-	image_info = hdx::createDescriptorImageInfo(input_texture, sampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+	float* image_data = stbi_loadf("res/night.hdr", &hdr_width, &hdr_height, &hdr_channels, 0);
+	if (!image_data) {
+		throw std::runtime_error("Failed to load texture image!");
+	}
+	uint64_t image_size = hdr_width * hdr_height * sizeof(float) * 4;
 
-	vb_desc = hdx::createBuffer(device, vk::BufferUsageFlagBits::eVertexBuffer, sizeof(Vertex) * vertex_count);
-	hdx::allocateBufferMemory(device, device_desc.memory_properties, vb_desc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	hdx::copyToDevice(device, vb_desc, vertices.data(), sizeof(Vertex) * vertex_count);
+	// Allocate RGBA float buffer
+	std::vector<float> rgbaData(hdr_width * hdr_height * 4);
 
-	ib_desc = hdx::createBuffer(device, vk::BufferUsageFlagBits::eIndexBuffer, sizeof(uint32_t) * index_count);
-	hdx::allocateBufferMemory(device, device_desc.memory_properties, ib_desc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-	hdx::copyToDevice(device, ib_desc, indices.data(), sizeof(uint32_t) * index_count);
+	for (int i = 0; i < hdr_width * hdr_height; ++i) {
+		rgbaData[i * 4 + 0] = image_data[i * hdr_channels + 0]; // R
+		rgbaData[i * 4 + 1] = image_data[i * hdr_channels + 1]; // G
+		rgbaData[i * 4 + 2] = image_data[i * hdr_channels + 2]; // B
+		rgbaData[i * 4 + 3] = 1.0f;                   // A
+	}
+
+	sampler = hdx::createTextureSampler(device, device_desc.properties, 1);
+	hdx::createImageDesc(device, hdr_texture, vk::Format::eR32G32B32A32Sfloat, hdr_width, hdr_height, vk::SampleCountFlagBits::e1, sampled_usage_flags, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_2d, 1, {}, device_desc, 1);
+	image_info = hdx::createDescriptorImageInfo(hdr_texture, sampler, vk::ImageLayout::eShaderReadOnlyOptimal);
+
+	hdr_tb = hdx::createBuffer(device, vk::BufferUsageFlagBits::eTransferSrc, image_size);
+	hdx::allocateBufferMemory(device, device_desc.memory_properties, hdr_tb, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+	hdx::copyToDevice(device, hdr_tb, rgbaData.data(), image_size);
+
+	hdx::beginSingleTimeCommands(device, command_buffer);
+		hdx::transitionImageLayout(device, hdr_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
+		hdx::copyBufferToImage(device, hdr_tb, hdr_texture, hdr_width, hdr_height, 1, command_buffer);
+		hdx::transitionImageLayout(device, hdr_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
+	hdx::endSingleTimeCommands(device, command_buffer, command_pool, queue);
+
+	hdx::createImageDesc(device, input_texture, vk::Format::eR8G8B8A8Srgb, image_width, image_height, vk::SampleCountFlagBits::e1, sampled_usage_flags, vk::ImageAspectFlagBits::eColor, image_type_2d, view_type_2d, 1, {}, device_desc, 1);
 
 	ub_desc = hdx::createBuffer(device, vk::BufferUsageFlagBits::eUniformBuffer, sizeof(MVP));
 	hdx::allocateBufferMemory(device, device_desc.memory_properties, ub_desc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -165,7 +155,14 @@ Application::Application()
 	accum_ssb = hdx::createBuffer(device, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc, Nx * Ny * sizeof(glm::vec4));
 	hdx::allocateBufferMemory(device, device_desc.memory_properties, accum_ssb, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 	accum_ssb_info = hdx::createDescriptorBufferInfo(accum_ssb, Nx * Ny * sizeof(glm::vec4));
-	zero_bf = (uint8_t*)malloc(Nx * Ny * sizeof(glm::vec4));
+
+	bright_ssb = hdx::createBuffer(device, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc, Nx * Ny * sizeof(glm::vec4));
+	hdx::allocateBufferMemory(device, device_desc.memory_properties, bright_ssb, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+	bright_ssb_info = hdx::createDescriptorBufferInfo(bright_ssb, Nx * Ny * sizeof(glm::vec4));
+
+	hdr_ssb = hdx::createBuffer(device, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc, Nx * Ny * sizeof(glm::vec4));
+	hdx::allocateBufferMemory(device, device_desc.memory_properties, hdr_ssb, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+	hdr_ssb_info = hdx::createDescriptorBufferInfo(hdr_ssb, Nx * Ny * sizeof(glm::vec4));
 
 	uint64_t rays_size = image_width * image_height * sizeof(Ray);
 	ray_ssb = hdx::createBuffer(device, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc, rays_size);
@@ -176,17 +173,19 @@ Application::Application()
 	pool_sizes = {
 		hdx::createDescriptorPoolSize(vk::DescriptorType::eUniformBuffer, 2),
 		hdx::createDescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, 1),
-		hdx::createDescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 3)
+		hdx::createDescriptorPoolSize(vk::DescriptorType::eStorageBuffer, 5)
 	};
 	descriptor_pool = hdx::createDescriptorPool(device, pool_sizes, 1);
 
 	_DSLB = {
 		hdx::createDescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment),
-		hdx::createDescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eFragment),
+		hdx::createDescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, vk::ShaderStageFlagBits::eCompute),
 		hdx::createDescriptorSetLayoutBinding(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute),
 		hdx::createDescriptorSetLayoutBinding(3, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eCompute),
 		hdx::createDescriptorSetLayoutBinding(4, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute),
-		hdx::createDescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
+		hdx::createDescriptorSetLayoutBinding(5, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute),
+		hdx::createDescriptorSetLayoutBinding(6, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute),
+		hdx::createDescriptorSetLayoutBinding(7, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eCompute)
 	};
 	_DSL = hdx::createDescriptorSetLayout(device, _DSLB);
 	_DS = hdx::allocateDescriptorSet(device, _DSL, descriptor_pool);
@@ -197,19 +196,26 @@ Application::Application()
 		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, ssb_info, 2),
 		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eUniformBuffer, ubo_info, 3),
 		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, ray_ssb_info, 4),
-		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, accum_ssb_info, 5)
+		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, accum_ssb_info, 5),
+		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, bright_ssb_info, 6),
+		hdx::createWriteDescriptorSet(_DS, vk::DescriptorType::eStorageBuffer, hdr_ssb_info, 7)
 	};
-	device.updateDescriptorSets(6, _WDS.data(), 0, nullptr);
+	device.updateDescriptorSets(8, _WDS.data(), 0, nullptr);
 
 
 	rtx_pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
 	rtx_pipeline = hdx::createComputePipeline(device, _DSL, rtx_pipeline_layout, "res/shaders/rtx.comp.spv");
+	h_blur = hdx::createComputePipeline(device, _DSL, rtx_pipeline_layout, "res/shaders/horizontal_blur.comp.spv");
+	v_blur = hdx::createComputePipeline(device, _DSL, rtx_pipeline_layout, "res/shaders/vertical_blur.comp.spv");
+	composite = hdx::createComputePipeline(device, _DSL, rtx_pipeline_layout, "res/shaders/composite_pass.comp.spv");
 
 	uint32_t Nx = image_width, Ny = image_height;
 	Dimension block_dimension = { 32, 32, 1 };
-	grid_dimension = { (Nx + block_dimension.x - 1) / block_dimension.x,
-								 (Ny + block_dimension.y - 1) / block_dimension.y,
-															(1)						};
+	grid_dimension = {
+		(Nx + block_dimension.x - 1) / block_dimension.x,
+		(Ny + block_dimension.y - 1) / block_dimension.y,
+									(1)
+	};
 
 
 	// RayTracing computation
@@ -219,37 +225,23 @@ Application::Application()
 	// Wait for the fence to be signaled before proceeding
 	device.waitForFences(in_flight_fence, VK_TRUE, UINT64_MAX);
 	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources }); // Reset the command buffer
-
 	
 	hdx::beginSingleTimeCommands(device, command_buffer);
-		hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
+		hdx::transitionImageLayout(device, input_texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
 		hdx::copyBufferToImage(device, ssb, input_texture, image_width, image_height, 1, command_buffer);
-		hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
 	hdx::endSingleTimeCommands(device, command_buffer, command_pool, queue);
 
-	if (image_height == image_width)
-		std::cout << "\n\n" << bytes_per_pixel << "\n\n";
 
-	screenshot(device, ssb, Nx, Ny, screenshot_index);
+	//screenshot(device, ssb, Nx, Ny, screenshot_index);
 
-	// Free the image memory
-//	stbi_image_free(pixels);
-
-	graphics_pipeline_layout = hdx::createPipelineLayout(device, _DSL, 0);
-	graphics_pipeline = hdx::createGraphicsPipeline(device, graphics_pipeline_layout, renderpass, msaa_samples, "res/shaders/shader.vert.spv", "res/shaders/shader.frag.spv", binding_descriptions, attribute_descriptions, _DSL, vk::PrimitiveTopology::eTriangleList, extent);
-
-	wait_stages[0] = vk::PipelineStageFlagBits::eVertexInput;
-	wait_stages[1] = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
 	camera.translate(0, 0, 3.77);
+	//camera.rotate(-2000, 0, 0);
 }
 
 
 void Application::update(float delta_time, AppState& app_state)
 {
-	//if (fr_id == 1)/*
-		//hdx::copyToDevice(device, accum_ssb, zero_bf, sizeof(glm::vec4) * Nx * Ny);*/
-
 	// RayTracing computation
 	hdx::recordComputeCommandBuffer(device, command_buffer, rtx_pipeline, rtx_pipeline_layout, _DS, grid_dimension.x, grid_dimension.y, grid_dimension.z);
 	device.resetFences({ in_flight_fence }); // Reset the fence before submission
@@ -258,10 +250,33 @@ void Application::update(float delta_time, AppState& app_state)
 	device.waitForFences(in_flight_fence, VK_TRUE, UINT64_MAX);
 	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources }); // Reset the command buffer
 
+	// Horizontal gaussian blur
+	hdx::recordComputeCommandBuffer(device, command_buffer, h_blur, rtx_pipeline_layout, _DS, grid_dimension.x, grid_dimension.y, grid_dimension.z);
+	device.resetFences({ in_flight_fence }); // Reset the fence before submission
+	hdx::submitCommand(command_buffer, queue, in_flight_fence);
+	// Wait for the fence to be signaled before proceeding
+	device.waitForFences(in_flight_fence, VK_TRUE, UINT64_MAX);
+	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources }); // Reset the command buffer
+
+	// Vertical Gaussian blur
+	hdx::recordComputeCommandBuffer(device, command_buffer, v_blur, rtx_pipeline_layout, _DS, grid_dimension.x, grid_dimension.y, grid_dimension.z);
+	device.resetFences({ in_flight_fence }); // Reset the fence before submission
+	hdx::submitCommand(command_buffer, queue, in_flight_fence);
+	// Wait for the fence to be signaled before proceeding
+	device.waitForFences(in_flight_fence, VK_TRUE, UINT64_MAX);
+	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources }); // Reset the command buffer
+
+	// Composite pass
+	hdx::recordComputeCommandBuffer(device, command_buffer, composite, rtx_pipeline_layout, _DS, grid_dimension.x, grid_dimension.y, grid_dimension.z);
+	device.resetFences({ in_flight_fence }); // Reset the fence before submission
+	hdx::submitCommand(command_buffer, queue, in_flight_fence);
+	// Wait for the fence to be signaled before proceeding
+	device.waitForFences(in_flight_fence, VK_TRUE, UINT64_MAX);
+	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources }); // Reset the command buffer
+
 	hdx::beginSingleTimeCommands(device, command_buffer);
-	hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
-	hdx::copyBufferToImage(device, ssb, input_texture, image_width, image_height, 1, command_buffer);
-	hdx::transitionImageLayout(device, input_texture, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::Format::eR32G32B32A32Sfloat, command_buffer, 1, 1);
+		hdx::copyBufferToImage(device, ssb, input_texture, image_width, image_height, 1, command_buffer);
+		hdx::transitionImageLayout(device, input_texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
 	hdx::endSingleTimeCommands(device, command_buffer, command_pool, queue);
 
 	fr_id++;
@@ -325,10 +340,6 @@ void Application::update(float delta_time, AppState& app_state)
 		screenshot(device, ssb, Nx, Ny, screenshot_index);
 	}
 
-
-
-
-
 	if (Input::GetKey(Input::KEY_ESCAPE))
 	{
 		app_state.running = false;
@@ -351,30 +362,13 @@ void Application::update(float delta_time, AppState& app_state)
 	}
 	command_buffer.reset({ vk::CommandBufferResetFlagBits::eReleaseResources });
 
-	std::vector<vk::ClearValue> clear_values = {
-		vk::ClearColorValue(std::array<float, 4>{0.2f, 0.2f, 0.0f, 1.0f}),
-		vk::ClearDepthStencilValue(1.0f, 0)
-	};
-	vk::Buffer vbs[] = { vb_desc.buffer };
-	uint64_t offsets[] = { 0 };
-	hdx::beginRenderpass(command_buffer, renderpass, framebuffers[image_index], extent, clear_values);
-		hdx::recordCommandBuffer(graphics_pipeline, graphics_pipeline_layout, index_count, command_buffer, vbs, ib_desc.buffer, _DS, offsets, 1, 1);
-	hdx::endRenderpass(command_buffer);
-
-	vk::Semaphore wait_semaphores[] = { image_available_semaphore };
-
-	vk::SubmitInfo submit_info = 0;
-	submit_info.sType = vk::StructureType::eSubmitInfo;
-	submit_info.waitSemaphoreCount = 1;
-	submit_info.pWaitSemaphores = &image_available_semaphore;
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = &render_finished_semaphore;
-	submit_info.pWaitDstStageMask = wait_stages;
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &command_buffer;
-	queue.submit({ submit_info }, in_flight_fence);
+	hdx::beginSingleTimeCommands(device, command_buffer);
+		hdx::transitionImageLayout(device, swapchain_images[image_index], vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::Format::eR8G8B8A8Srgb, command_buffer, 1, 1);
+		hdx::copyImage(command_buffer,	input_texture.image, swapchain_images[image_index], vk::Extent3D{ WIDTH, HEIGHT, 1 }, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::ePresentSrcKHR);
+	hdx::endSingleTimeCommands(image_available_semaphore, render_finished_semaphore, in_flight_fence, command_buffer, queue);
 
 	vk::SwapchainKHR swapChains[] = { swap_chain };
+
 	vk::PresentInfoKHR present_info;
 	present_info.sType = vk::StructureType::ePresentInfoKHR;
 	present_info.waitSemaphoreCount = 1;
@@ -410,21 +404,25 @@ void Application::update(float delta_time, AppState& app_state)
 Application::~Application()
 {
 	cleanupSwapchain(device, swap_chain, swapchain_imageviews, framebuffers, color_image, depth_image);
-	hdx::cleanupBuffer(device, vb_desc);
+
 	hdx::cleanupBuffer(device, ub_desc);
-	hdx::cleanupBuffer(device, ib_desc);
 	hdx::cleanupBuffer(device, ssb);
 	hdx::cleanupBuffer(device, accum_ssb);
 	hdx::cleanupBuffer(device, ray_ssb);
+	hdx::cleanupBuffer(device, bright_ssb);
+	hdx::cleanupBuffer(device, hdr_ssb);
 	hdx::cleanupBuffer(device, ubo);
 	hdx::cleanupImage(device, input_texture);
+	hdx::cleanupBuffer(device, hdr_tb);
+	hdx::cleanupImage(device, hdr_texture);
 	hdx::cleanupImage(device, output_texture);
 	device.destroySampler(sampler);
 
 	device.destroyPipeline(rtx_pipeline);
+	device.destroyPipeline(h_blur);
+	device.destroyPipeline(v_blur);
+	device.destroyPipeline(composite);
 	device.destroyPipelineLayout(rtx_pipeline_layout);
-	device.destroyPipeline(graphics_pipeline);
-	device.destroyPipelineLayout(graphics_pipeline_layout);
 
 	device.destroyRenderPass(renderpass);
 
