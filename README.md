@@ -4,10 +4,10 @@
 
 This project is a Vulkan-based 3D rendering engine developed in C++. The engine is designed to showcase advanced rendering techniques and real-time graphics features. It includes various examples and implementations of modern rendering techniques, making it a robust foundation for graphics programming and engine development.
 
-![Screenshot of the Engine](ss/screenshot.png)
-![Screenshot of the Engine](ss/screenshot_000.png)
-![Screenshot of the Engine](ss/screenshot_001.png)
-![Screenshot of the Engine](ss/shadow.png)
+![PBR](ss/screenshot.png)
+![HDR](ss/screenshot_000.png)
+![Phong](ss/screenshot_001.png)
+![Shadow mapping](ss/shadow.png)
 
 ## Features
 
