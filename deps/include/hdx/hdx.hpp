@@ -114,10 +114,15 @@ namespace hdx
 	void cleanupBuffer(vk::Device& device, BufferDesc buffer_desc);
 
 // COMMAND FUNCTIONS
+	vk::CommandBuffer beginSingleTimeCommands(vk::Device device, vk::CommandPool cmd_pool);
+	void endSingleTimeCommands(vk::Device device, vk::CommandBuffer command_buffer, vk::CommandPool cmd_pool, vk::Queue queue, vk::Fence fence);
+
 	vk::CommandPool createCommandPool(const vk::Device &device, const uint32_t &queueFamilyIndex);
 	vk::CommandBuffer allocateCommandBuffer(const vk::Device& device, const vk::CommandPool command_pool);
 	std::array<vk::ClearValue, 2> clearColor(std::array<float, 4> color);
+	void beginRenderpass(vk::CommandBuffer cmd_buffer, vk::RenderPass& renderpass, vk::Framebuffer framebuffer, vk::Extent2D extent, std::vector<vk::ClearValue> clear_values, bool bcmd);
 	void beginRenderpass(vk::CommandBuffer cmd_buffer, vk::RenderPass& renderpass, vk::Framebuffer framebuffer, vk::Extent2D extent, std::vector<vk::ClearValue> clear_values);
+	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, vk::CommandBuffer cmd_buffer, vk::DescriptorSet descriptor_set);
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t vertex_count, vk::CommandBuffer cmd_buffer, vk::Buffer vertex_buffers[], vk::DescriptorSet descriptor_set, uint64_t offsets[]);
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t index_count, vk::CommandBuffer cmd_buffer, vk::Buffer vertex_buffers[], vk::Buffer index_buffer, vk::DescriptorSet descriptor_set, uint64_t offsets[], uint32_t binding_count, uint32_t instance_count);
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t vertex_count, vk::CommandBuffer cmd_buffer, BufferDesc vertex_buffer_desc);
@@ -162,6 +167,8 @@ namespace hdx
     void cleanupImage(vk::Device device, ImageDesc image_desc);
     vk::Framebuffer createFramebuffer(const vk::Device& device, vk::ImageView swapchain_imageview, vk::ImageView color_imageview, const vk::ImageView& depth_imageview, const vk::RenderPass& rp, vk::Extent2D extent);
 	vk::Framebuffer createFramebuffer(const vk::Device& device, vk::ImageView imageview, const vk::RenderPass& rp, uint32_t width, uint32_t height);
+	
+	void copyImageToBuffer(vk::CommandBuffer cmdBuffer, vk::Image image, vk::Format format, vk::Extent2D extent, vk::Buffer dstBuffer);
 	void copyImage(vk::CommandBuffer cmdBuffer, vk::Image srcImage,	vk::Image dstImage, vk::Extent3D extent, vk::ImageLayout srcOldLayout, vk::ImageLayout dstOldLayout, vk::ImageLayout srcFinalLayout,	vk::ImageLayout dstFinalLayout);
 	void transitionImageLayout(vk::Device device, vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count);
 	void transitionImageLayout(vk::Device device, vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::Format format, vk::CommandBuffer command_buffer, uint32_t mip_levels, uint32_t layer_count);

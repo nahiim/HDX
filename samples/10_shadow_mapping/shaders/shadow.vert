@@ -10,9 +10,17 @@ layout(binding = 0) uniform Light
     mat4 view;
     mat4 projection;
     vec4 view_pos;
-};
+} light;
+layout(binding = 1) uniform MVP
+{
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    vec4 view_pos;
+} mvp;
 
-void main() {
+void main()
+{
     // Transform the vertex position to light space
-    gl_Position = projection * view * model * vec4(in_position, 1.0);
+    gl_Position = light.projection * light.view * mvp.model * vec4(in_position, 1.0);
 }

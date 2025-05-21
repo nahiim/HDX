@@ -13,14 +13,14 @@
 #include <hdx/hdx.hpp>
 #include <hdx/mvp.h>
 #include <hdx/perspective_camera.h>
+#include <glm/gtx/string_cast.hpp>
 
 
 struct Vertex
 {
 	glm::vec4 position;
 	glm::vec4 normal;
-	glm::vec4 uv;
-	glm::vec4 tangent;
+	glm::vec4 color;
 };
 struct Light
 {
@@ -51,7 +51,7 @@ public:
 	void update(float delta_time, AppState& app_state);
 
 	Window* window;
-	const uint32_t WIDTH = 640, HEIGHT = 480;
+	const uint32_t WIDTH = 512, HEIGHT = 512;
 
 	hdx::DeviceDesc device_desc;
 	vk::Device device;
@@ -81,13 +81,14 @@ public:
 	vk::CommandBuffer command_buffer, s_cmd, sh_cmd;
 
 	vk::Semaphore image_available_semaphore;
+	vk::Semaphore in_between_semaphore;
 	vk::Semaphore render_finished_semaphore;
-	vk::Fence in_flight_fence;
+	vk::Fence in_flight_fence, dp_fence;
 
 	uint32_t current_frame = 0;
 
-	vk::Pipeline pipeline, plane_pipeline;
-	vk::PipelineLayout pipeline_layout, plane_PL;
+	vk::Pipeline pipeline, plane_pipeline, quad_pipeline, s_pipeline;
+	vk::PipelineLayout pipeline_layout, plane_PL, quad_PL, s_PL;
 
 	hdx::BufferDesc vb, ib, ub, diffuse_tb, normal_tb, light_ub;
 	vk::Sampler sampler;
@@ -108,9 +109,9 @@ public:
 	vk::DescriptorPool descriptor_pool;
 	std::vector<vk::DescriptorPoolSize> pool_sizes;
 	std::vector<vk::WriteDescriptorSet> _WDS;
-	vk::DescriptorSetLayout _DSL, _DSL_plane;
-	vk::DescriptorSet _DS, _DS_plane;
-	std::vector<vk::DescriptorSetLayoutBinding> _DSLB, _DSLB_plane;
+	vk::DescriptorSetLayout _DSL, _DSL_plane, _DSL_quad, _DSL_s;
+	vk::DescriptorSet _DS, _DS_plane, _DS_quad, _DS_s;
+	std::vector<vk::DescriptorSetLayoutBinding> _DSLB, _DSLB_plane, _DSLB_quad, _DSLB_s;
 	vk::DescriptorBufferInfo _DBI_u, _DBI_light, _DBI_plane;
 	vk::DescriptorImageInfo _DII_diffuse, _DII_normal, _DII_plane;
 
@@ -157,4 +158,13 @@ public:
 	float last_frame_time = 0.0f;
 	vk::SampleCountFlagBits msaa_samples;
 	vk::PipelineStageFlags wait_stages[2];
+
+	hdx::BufferDesc bf;
+	hdx::ImageDesc im;
+	vk::DescriptorImageInfo ii;
+	vk::Sampler sa;
+
+	uint32_t frame_index = 0;
+
+	float sw = 512;
 };

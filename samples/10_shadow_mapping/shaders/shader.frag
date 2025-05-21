@@ -16,6 +16,10 @@ layout(binding = 3) uniform Light
 {
     vec4 position;
     vec4 color;
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    vec4 view_pos;
 }light;
 
 

@@ -1,5 +1,6 @@
 #version 450
 
+layout(location = 0) out vec4 out_color;
 void main() {
-    // No need to output anything; the depth is automatically written to the depth buffer
+    out_color = vec4(1.0);
 }

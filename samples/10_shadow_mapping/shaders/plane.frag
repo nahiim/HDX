@@ -1,15 +1,21 @@
 #version 450
 
-layout(location = 0) in vec2 frag_uv;
+layout(location = 0) in vec3 frag_pos;
 layout(location = 1) in vec3 frag_normal;
-layout(location = 2) in vec3 frag_pos;
-layout(location = 3) in vec3 frag_tangent;
+layout(location = 2) in vec3 frag_color;
+layout(location = 3) in vec4 light_space;   // Light-space position
 
 layout(location = 0) out vec4 out_color;
 
-layout(binding = 1) uniform sampler2DArray t_map;
+layout(binding = 0) uniform MVP
+{
+    mat4 model;
+    mat4 view;
+    mat4 projection;
+    vec4 view_pos;
+} mvp;
 
-layout(binding = 2) uniform Light
+layout(binding = 1) uniform Light
 {
     vec4 position;
     vec4 color;
@@ -18,48 +24,75 @@ layout(binding = 2) uniform Light
     mat4 projection;
     vec4 view_pos;
 }light;
-layout(binding = 3) uniform sampler2DShadow shadow_map;
+
+layout(binding = 2) uniform sampler2D shadow_map;
+
+vec3 ambient  = vec3(0.1, 0.1, 0.1);
+vec3 diffuse  = frag_color;
+vec3 specular = vec3(0.2);
+float shininess = 32.0;
+
+float ShadowCalculation(vec4 fragPosLightSpace)
+{
+    // perform perspective divide
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    // transform to [0,1] range
+    projCoords = projCoords * 0.5 + 0.5;
+    // get closest depth value from light's perspective (using [0,1] range fragPosLight as coords)
+    float closestDepth = texture(shadow_map, projCoords.xy).r; 
+    // get depth of current fragment from light's perspective
+    float currentDepth = projCoords.z;
+    // calculate bias (based on depth map resolution and slope)
+    vec3 normal = normalize(frag_normal);
+    vec3 lightDir = normalize(light.position.xyz - frag_pos);
+    float bias = max(0.05 * (1.0 - dot(normal, lightDir)), 0.005);
+    // check whether current frag pos is in shadow
+    // float shadow = currentDepth - bias > closestDepth  ? 1.0 : 0.0;
+    // PCF
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / textureSize(shadow_map, 0);
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float pcfDepth = texture(shadow_map, projCoords.xy + vec2(x, y) * texelSize).r; 
+            shadow += currentDepth - bias > pcfDepth  ? 1.0 : 0.0;        
+        }
+    }
+    shadow /= 9.0;
+    
+    // keep the shadow at 0.0 when outside the far_plane region of the light's frustum.
+    if(projCoords.z > 1.0)
+        shadow = 0.0;
+        
+    return shadow;
+}
 
 void main()
 {
-    vec3 normal_uv = vec3(frag_uv, 1.0);  // normal map is at layer 1
-    vec3 diffuse_uv = vec3(frag_uv, 0.0); // albedo map is at layer 0
+    vec3 norm = normalize(frag_normal);
+    vec3 light_dir = normalize(light.position.xyz - frag_pos);
+    vec3 view_dir = normalize(mvp.view_pos.xyz - frag_pos);
+    vec3 reflect_dir = reflect(-light_dir, norm);
 
-    // Obtain normal from normal map in range [0,1]
-    vec3 normal = texture(t_map, normal_uv).rgb;
+    // Ambient
+    vec3 ambient_comp = ambient * light.color.rgb;
 
-    // Transform normal vector to range [-1,1]
-    normal = normalize(normal * 2.0 - 1.0);  // This normal is in tangent space
+    // Diffuse
+    float diff = max(dot(norm, light_dir), 0.1);
+    vec3 diffuse_comp = diff * diffuse * light.color.rgb;
 
-    // Compute tangent space basis
-    vec3 bitangent = cross(frag_normal, frag_tangent);
-    mat3 TBN = mat3(frag_tangent, bitangent, frag_normal);  // Tangent space basis matrix
+    // Specular
+    float spec = pow(max(dot(view_dir, reflect_dir), 0.0), shininess);
+    vec3 specular_comp = spec * specular * light.color.rgb;
 
-    // Transform normal to world space
-    vec3 world_normal = normalize(TBN * normal);
+    // Sample the shadow mask
+    float shadow = ShadowCalculation(light_space);
 
-    // Lighting calculations (simple diffuse lighting)
-    vec3 lightDir = normalize(vec3(light.position) - frag_pos);
-    float diff = max(dot(world_normal, lightDir), 0.0);
+    // Correct shadowing: apply shadow only to diffuse and specular
+    vec3 lit_color = ambient_comp + (1-shadow) * (diffuse_comp + specular_comp);
 
-    // Sample albedo map
-    vec3 albedo = texture(t_map, diffuse_uv).rgb;
+    out_color = vec4(lit_color, 1.0);
 
-    // Calculate shadow
-    vec4 light_space_pos = light.projection * light.view * vec4(frag_pos, 1.0);
-    vec3 shadow_coord = light_space_pos.xyz / light_space_pos.w;
-    shadow_coord = shadow_coord * 0.5 + 0.5; // Transform to [0,1] range
-
-    float shadow = texture(shadow_map, shadow_coord);
-    shadow = shadow < shadow_coord.z ? 0.5 : 1.0; // Simple shadow test
-
-    // Debugging output
-    out_color = vec4(diff * albedo * shadow, 1.0);
-    // Uncomment the following line to visualize normals
-    // out_color = vec4((world_normal + 1.0) * 0.5, 1.0);  // For visualizing world normals
-    // Uncomment the following line to visualize light direction
-    // out_color = vec4((lightDir + 1.0) * 0.5, 1.0);  // For visualizing light direction
-
-//out_color = vec4(shadow_coord, 1.0); // For debugging
 
 }

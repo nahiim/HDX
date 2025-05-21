@@ -686,12 +686,33 @@ namespace hdx
 		subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
 		subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
+		std::array<vk::SubpassDependency, 2> dependencies;
+
+		dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[0].dstSubpass = 0;
+		dependencies[0].srcStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+		dependencies[0].dstStageMask = vk::PipelineStageFlagBits::eEarlyFragmentTests;
+		dependencies[0].srcAccessMask = vk::AccessFlagBits::eShaderRead;
+		dependencies[0].dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		dependencies[0].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+		dependencies[1].srcSubpass = 0;
+		dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+		dependencies[1].srcStageMask = vk::PipelineStageFlagBits::eLateFragmentTests;
+		dependencies[1].dstStageMask = vk::PipelineStageFlagBits::eFragmentShader;
+		dependencies[1].srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+		dependencies[1].dstAccessMask = vk::AccessFlagBits::eShaderRead;
+		dependencies[1].dependencyFlags = vk::DependencyFlagBits::eByRegion;
+
+
 		vk::RenderPassCreateInfo renderpass_info{};
 		renderpass_info.sType = vk::StructureType::eRenderPassCreateInfo;
 		renderpass_info.attachmentCount = 1;
 		renderpass_info.pAttachments = &depth_attachment;
 		renderpass_info.subpassCount = 1;
 		renderpass_info.pSubpasses = &subpass;
+		renderpass_info.dependencyCount = static_cast<uint32_t>(dependencies.size());
+		renderpass_info.pDependencies = dependencies.data();
 
 
 		try
@@ -922,6 +943,36 @@ namespace hdx
 
 		return command_buffer;
 	}
+
+
+	void beginRenderpass(vk::CommandBuffer cmd_buffer, vk::RenderPass& renderpass, vk::Framebuffer framebuffer, vk::Extent2D extent, std::vector<vk::ClearValue> clear_values, bool bcmd)
+	{
+		// Begin render pass
+		vk::RenderPassBeginInfo renderPassInfo{};
+		renderPassInfo.renderPass = renderpass;
+		renderPassInfo.framebuffer = framebuffer;
+		renderPassInfo.renderArea.offset.x = 0;
+		renderPassInfo.renderArea.offset.y = 0;
+		renderPassInfo.renderArea.extent = extent;
+		renderPassInfo.clearValueCount = static_cast<uint32_t>(clear_values.size());
+		renderPassInfo.pClearValues = clear_values.data();
+
+		vk::Viewport viewport{};
+		viewport.x = 0.0f;
+		viewport.y = 0.0f;
+		viewport.width = (float)extent.width;
+		viewport.height = (float)extent.height;
+		viewport.minDepth = 0.0f;
+		viewport.maxDepth = 1.0f;
+		cmd_buffer.setViewport(0, 1, &viewport);
+		vk::Rect2D scissor{};
+		scissor.offset = vk::Offset2D{ 0, 0 };
+		scissor.extent = extent;
+		cmd_buffer.setScissor(0, 1, &scissor);
+
+		cmd_buffer.beginRenderPass(renderPassInfo, vk::SubpassContents::eInline);
+	}
+
 	void beginRenderpass(vk::CommandBuffer cmd_buffer, vk::RenderPass& renderpass, vk::Framebuffer framebuffer, vk::Extent2D extent, std::vector<vk::ClearValue> clear_values)
 	{
 		// Allocate command buffer recording information
@@ -993,6 +1044,11 @@ namespace hdx
 
 
 
+	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, vk::CommandBuffer cmd_buffer, vk::DescriptorSet descriptor_set)
+	{
+		cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+		cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipeline_layout, 0, 1, &descriptor_set, 0, nullptr);
+	}
 	void recordCommandBuffer(vk::Pipeline pipeline, vk::PipelineLayout pipeline_layout, uint32_t vertex_count, vk::CommandBuffer cmd_buffer, vk::Buffer vertex_buffers[], vk::DescriptorSet descriptor_set, uint64_t offsets[])
 	{
 		cmd_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
@@ -1050,6 +1106,46 @@ namespace hdx
 		// End recording commands into the command buffer
 		command_buffer.end();
 	}
+
+	vk::CommandBuffer beginSingleTimeCommands(vk::Device device, vk::CommandPool cmd_pool)
+	{
+		vk::CommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = vk::StructureType::eCommandBufferAllocateInfo;
+		allocInfo.level = vk::CommandBufferLevel::ePrimary;
+		allocInfo.commandPool = cmd_pool;
+		allocInfo.commandBufferCount = 1;
+
+		vk::CommandBuffer command_buffer;
+		device.allocateCommandBuffers(&allocInfo, &command_buffer);
+
+		vk::CommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = vk::StructureType::eCommandBufferBeginInfo;
+		beginInfo.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit;
+
+		command_buffer.begin(beginInfo);
+
+		return command_buffer;
+	}
+
+	void endSingleTimeCommands(vk::Device device, vk::CommandBuffer command_buffer, vk::CommandPool cmd_pool, vk::Queue queue, vk::Fence fence)
+	{
+		command_buffer.end();
+
+		vk::SubmitInfo submit_info{};
+		submit_info.commandBufferCount = 1;
+		submit_info.pCommandBuffers = &command_buffer;
+
+		device.resetFences(fence);
+		queue.submit(submit_info, fence);
+		device.waitForFences(fence, VK_TRUE, UINT64_MAX);
+
+		// Only safe if command pool was created with eResetCommandBuffer
+		command_buffer.reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+	}
+
+
+
+
 	void beginSingleTimeCommands(vk::Device device, vk::CommandBuffer& command_buffer)
 	{
 		vk::CommandBufferBeginInfo beginInfo{};
@@ -1278,6 +1374,54 @@ namespace hdx
 		return framebuffer;
 	}
 
+
+	void copyImageToBuffer(
+		vk::CommandBuffer cmdBuffer,
+		vk::Image image,
+		vk::Format format,
+		vk::Extent2D extent,
+		vk::Buffer dstBuffer
+	) {
+		// 1. Transition image layout to TRANSFER_SRC_OPTIMAL
+		vk::ImageMemoryBarrier barrier{};
+		barrier.oldLayout = vk::ImageLayout::eUndefined;  // or eShaderReadOnlyOptimal
+		barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+		barrier.srcAccessMask = {};
+		barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+		barrier.image = image;
+		barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eDepth;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		cmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eLateFragmentTests,
+			vk::PipelineStageFlagBits::eTransfer,
+			{}, {}, {}, barrier
+		);
+
+		// 2. Define the copy region
+		vk::BufferImageCopy region{};
+		region.bufferOffset = 0;
+		region.bufferRowLength = 0;
+		region.bufferImageHeight = 0;
+		region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eDepth;
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = vk::Offset3D{ 0, 0, 0 };
+		region.imageExtent = vk::Extent3D{ extent.width, extent.height, 1 };
+
+		// 3. Record copy command
+		cmdBuffer.copyImageToBuffer(
+			image,
+			vk::ImageLayout::eTransferSrcOptimal,
+			dstBuffer,
+			region
+		);
+	}
+
 	void copyImage(
 		vk::CommandBuffer cmdBuffer,
 		vk::Image srcImage,
@@ -1399,12 +1543,20 @@ namespace hdx
 		barrier.dstAccessMask = vk::AccessFlagBits::eNoneKHR;
 
 		if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
-			barrier.srcAccessMask = vk::AccessFlagBits::eNoneKHR;
+			barrier.srcAccessMask = {};
 			barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 		}
-		else if (oldLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+		if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal) {
+			barrier.srcAccessMask = {};
+			barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+		}
+		else if (oldLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal && newLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal) {
 			barrier.srcAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 			barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+		}
+		else if (oldLayout == vk::ImageLayout::eDepthStencilReadOnlyOptimal && newLayout == vk::ImageLayout::eDepthStencilAttachmentOptimal) {
+			barrier.srcAccessMask = vk::AccessFlagBits::eShaderRead;
+			barrier.dstAccessMask = vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 		}
 
 		commandBuffer.pipelineBarrier(
@@ -1650,17 +1802,15 @@ namespace hdx
 
 		vk::SamplerCreateInfo samplerInfo{};
 		samplerInfo.sType = vk::StructureType::eSamplerCreateInfo;
-		samplerInfo.magFilter = vk::Filter::eLinear;
-		samplerInfo.minFilter = vk::Filter::eLinear;
+		samplerInfo.magFilter = vk::Filter::eNearest;
+		samplerInfo.minFilter = vk::Filter::eNearest;
 		samplerInfo.addressModeU = vk::SamplerAddressMode::eClampToEdge; // Change to ClampToEdge for shadow mapping
 		samplerInfo.addressModeV = vk::SamplerAddressMode::eClampToEdge; // Change to ClampToEdge for shadow mapping
 		samplerInfo.addressModeW = vk::SamplerAddressMode::eClampToEdge; // Change to ClampToEdge for shadow mapping
-		samplerInfo.anisotropyEnable = VK_FALSE;
-		samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-		samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueBlack; // Change to FloatOpaqueBlack for better precision
-		samplerInfo.unnormalizedCoordinates = VK_FALSE;
-		samplerInfo.compareEnable = VK_TRUE; // Enable depth comparison
-		samplerInfo.compareOp = vk::CompareOp::eLessOrEqual; // Compare operation for shadow mapping
+
+		samplerInfo.maxAnisotropy = 1.0f;
+		samplerInfo.borderColor = vk::BorderColor::eFloatOpaqueWhite; // Change to FloatOpaqueBlack for better precision
+
 		samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
 		samplerInfo.mipLodBias = 0.0f; // Optional
 		samplerInfo.minLod = 0.0f; // Optional
